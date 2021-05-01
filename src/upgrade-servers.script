@@ -1,9 +1,16 @@
 var target = args[0];
 var size = 4;
-var maxSize = 10;
-var script = "early-hack-template.script";
+var maxSize = args[1];
+var script = "targeted-hacking-script.script";
 var scriptRam = getScriptRam(script, "home");
 var maxServers = 23; // The game allows 24, but we have one of them just weakening in another script
+
+if (! target || ! maxSize) {
+    tprint("Usage: upgrade-servers.script [target] [max server size]");
+    exit;
+}
+
+print("Upgrading servers to size 2^" + maxSize + " targeting [" + target + "]");
 
 // TODO: This winds up costing twice as much as it needs to because we upgrade every server every level
 //       Should skip right to the end when money permits
@@ -50,8 +57,8 @@ while(size <= maxSize && shouldContinue) {
         }
 
         if (isNew) {
-            scp("targeted-hacking-script.script", hostname);
-            exec("targeted-hacking-script.script", hostname, numThreads, target);
+            scp(script, hostname);
+            exec(script, hostname, numThreads, target);
         }
 
         ++i;

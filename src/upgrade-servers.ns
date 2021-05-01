@@ -1,0 +1,136 @@
+/*
+ * Upgrades existing servers to a new (bigger) size and new target
+ * Replaces upgrade-servers.script
+ *
+ * 1. If you do not have the hacking skill to target [target], will display error message and quit
+ * 2. If you do not have enough money to upgrade at least one server to [size], will display error message and quit.
+ * 3. If you do not have enough money to upgrade all servers to [size], will do the ones it can and
+ *    - if ?block? is true, loop unti it can upgrade the next server, otherwise
+ *    - if ?block? is false, just end running; leaving the other servers upgraded
+ * 4. Creates servers with the name pattern: pserv-[size]-[index]
+ *    Where:
+ *        size = The ln(2) of the server's memory size in Gb (so pserv-10-1 has 1024 G of memory)
+ *        index = the server number (from 0 to [max])
+ * 5. Recognizes servers with names it created, plus those with the format: pserv-[index]
+ *    For servers without the size in the name, it will need to make a call to the server to get it's size
+ *
+ * NOTE: STILL A WORK IN PROGRESS
+ *
+ * Usage: run upgrade-servers.ns [size] [target] ?block?
+ */
+
+const SERVER_NAME_PATTERN_WITH_SIZE = /^pserv-(\d+)-(\d+)$/;
+const SERVER_NAME_PATTERN_NO_SIZE = /^pserv-(\d+)$/;
+
+/*
+ * Returns a list of purchased servers that match our naming patterns
+ */
+function getServersInfo(ns) {
+    var serverNames = ns.getPurchasedServers(); // list of hostname strings
+
+    return serverNames.map((hostname) => {
+        if (SERVER_NAME_PATTERN_WITH_SIZE.test(hostname)) {
+            const matches = hostname.match(SERVER_NAME_PATTERN_WITH_SIZE);
+            return {
+                'name': hostname,
+                'size': matches[1],
+                'index': matches[2]
+            }
+        } else if (SERVER_NAME_PATTERN_NO_SIZE.test(hostname)) {
+            const matches = hostname.match(SERVER_NAME_PATTERN_NO_SIZE);
+            return {
+                'name': hostname,
+                'size': null,
+                'index': matches[1]
+            }
+        } else {
+            // Dosn't match our patterns, ignore it
+            return null;
+        }
+    })
+    .filter((value) => value !== null);
+}
+
+
+function calculateServerName(size, index) {
+    return "pserv-" + size + "-" + index;
+}
+
+function getServerInfoByIndex(ns, servers, index) {
+    return Object.keys(servers)
+        .map((key) => servers[key])
+        .find((serverInfo) => serverInfo['index'] === index.toString());
+}
+
+function calculateIfNeedsUpgrade(ns, server, desiredSize) {
+    const serverSize = getServerSize(ns, server);
+    return (serverSize < desiredSize);
+}
+
+function getServerSize(ns, server) {
+    if (!server.hasOwnProperty('size') || server.size === null) {
+        const memory = ns.getServerRam(server.name); // [ total_memory, used_memory
+        server.memory_total = memory[0];
+        server.memory_used = memory[1];
+        //ns.tprint("Server memory: " + memory);
+        const size = Math.floor(Math.log2(memory[0]));
+        //ns.tprint("Server size: " + size);
+        server.size = size;
+    }
+    return server.size;
+}
+
+export async function main(ns) {
+    const desiredSize = ns.args[0];
+    const max = ns.args[1];
+    const block = ns.args[2] === "true" ? true : false;
+
+    if (!desiredSize || !max) {
+        ns.tprint("Usage: upgrade-servers.ns [desired size] [target] ?block?")
+        return;
+    }
+
+    const servers = getServersInfo(ns);
+
+    const anyServersToUpdate = servers
+        .filter((server) => {
+            const serverSize = getServerSize(ns, server);
+            ns.tprint("Server size / " + server.name + " : " + serverSize);
+            return true;
+        })
+        .some((server) => getServerSize(ns, server) < desiredSize)
+    if (anyServersToUpdate !== true) {
+        ns.tprint("There are no servers that need to be upgraded");
+        return;
+    }
+
+    var userMoney = ns.getServerMoneyAvailable('home');
+    const serverPurchaseCost = ns.getPurchasedServerCost(Math.pow(2, desiredSize));
+    if (userMoney < serverPurchaseCost) {
+        ns.tprint("Cannot afford to upgrade any servers. Cost (" + serverPurchaseCost + " > " + userMoney + ")");
+        return;
+    }
+
+    const serversToUpdate = servers
+        .filter((server) => getServerSize(ns, server) < desiredSize);
+
+    ns.tprint("Servers that need update: "
+        + serversToUpdate
+            .map((server) => server.name + "(" + getServerSize(ns, server) + ")")
+            .join(" , "));
+
+    //
+    //
+    //for (var index = 0; index < max; index++) {
+    //    var serverInfo = getServerInfoByIndex(ns, servers, index);
+    //    if (serverInfo !== null) {
+    //        ns.tprint("Found server [" + index + "]: " + serverInfo.name  + " " + serverInfo.size + " / " + JSON.stringify(serverInfo));
+    //    } else {
+    //        ns.tprint("No server found with index: " + index);
+    //    }
+    //}
+    //
+    //while (block) {
+    //    await ns.sleep(6 * 1000);
+    //}
+}
