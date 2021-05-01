@@ -7,43 +7,56 @@
 // Copied and then modified
 // From: https://www.reddit.com/r/Bitburner/comments/bworvo/anyone_got_a_good_script_or_just_an_algorithm_for/
 
-const keep = 0.2;
+// The fraction of total money to keep in reserve cash
+const RESERVE_FRACTION = 0.2;
 
-const buyLimit = 0.58;
-const sellLimit = 0.50;
+// Buy stocks that have a forecast higher than this
+const BUY_LIMIT = 0.58;
+// Sell stocks that have a forecast less than this
+const SELL_LIMIT = 0.50;
 
-const commission = 100000;
+// The amount paid per stock transaction
+const COMMISSION = 100000;
 
 function updateStockData(ns, stocks, myStocks) {
+    ns.print("Reading stock data");
+
     let corpus = ns.getServerMoneyAvailable("home");
     myStocks.length = 0;
-    for(let i = 0; i < stocks.length; ++i) {
+
+    for (let i = 0; i < stocks.length; ++i) {
         let sym = stocks[i].sym;
         stocks[i].price = ns.getStockPrice(sym);
         stocks[i].shares  = ns.getStockPosition(sym)[0];
         stocks[i].forecast  = ns.getStockForecast(sym);
-        if(stocks[i].shares > 0) myStocks.push(stocks[i]);
+        if(stocks[i].shares > 0) {
+            myStocks.push(stocks[i]);
+        }
         corpus += stocks[i].price * stocks[i].shares;
     }
     stocks.sort((a, b) => b.forecast - a.forecast);
+
     return corpus;
 }
 
 export async function main(ns) {
+    ns.print("Starting stock trader");
+
     ns.disableLog("ALL");
 
     let stocks = [];
     let myStocks = [];
-    let corpus = 0;
-    for(let i = 0; i < ns.getStockSymbols().length; ++i)
-        stocks.push({sym:ns.getStockSymbols()[i]});
-    updateStockData(ns, stocks, myStocks);
 
-    while(true) {
-        corpus = updateStockData(ns, stocks, myStocks);
+    for (let i = 0; i < ns.getStockSymbols().length; ++i) {
+        stocks.push({sym: ns.getStockSymbols()[i]});
+    }
+
+    while (true) {
+        let stockValue = updateStockData(ns, stocks, myStocks);
+
         // Sell bad shares
         for (let i = 0; i < myStocks.length; i++){
-            if(myStocks[i].forecast < sellLimit) {
+            if (myStocks[i].forecast < SELL_LIMIT) {
                 ns.print("Stock " + myStocks[i].sym + " no longer valuable. Selling.");
                 ns.sellStock(myStocks[i].sym, myStocks[i].shares);
             }
@@ -53,34 +66,50 @@ export async function main(ns) {
         // then reduce it by a certain % until it's buyable.
 
         let stockIndex = -1;
-        let cashToSpend = ns.getServerMoneyAvailable("home");
-        while(cashToSpend > 100*commission && cashToSpend > corpus / 10) {
-            ns.print("Have " + cashToSpend + " cash to spend.");
-            ++stockIndex;
+        let totalCash = ns.getServerMoneyAvailable("home");
+        let totalNetWorth = totalCash + stockValue;
+        let reserveCash = totalNetWorth * RESERVE_FRACTION;
+        let spendableCash = totalCash - reserveCash;
+
+        ns.print("Money [spendable=" + spendableCash.toLocaleString() + "]"
+            + " [cash=" + totalCash.toLocaleString() + "]"
+            + " [stocks=" + stockValue.toLocaleString() + "]"
+            + " [total=" + totalNetWorth.toLocaleString() + "]");
+
+        // Make sure we have enough for the trade to be worth the commission
+        while (spendableCash > (100 * COMMISSION)) {
+            ns.print("Have " + spendableCash.toLocaleString() + " cash to spend.");
+
+            stockIndex++;
             updateStockData(ns, stocks, myStocks);
+
             let stockToBuy = stocks[stockIndex];
-            if(stockToBuy.forecast < buyLimit) {
+            if (stockToBuy.forecast < BUY_LIMIT) {
                 ns.print("No more good stocks left.");
                 break;
             }
 
-            let availibleShares = ns.getStockMaxShares(stockToBuy.sym) - stockToBuy.shares
-            if(availibleShares == 0)
+            let availableShares = ns.getStockMaxShares(stockToBuy.sym) - stockToBuy.shares
+            if (availableShares <= 0) {
                 continue; // We bought all shares of this stock
+            }
 
-            let numberOfSharesToBuy = availibleShares;
-            while(true) {
-                // TODO: Calculate cash to spend based on money and how much we want to keep set aside
-                //       We want to keep aside <keep> * (<cash> + <value of stocks>)
-                if(ns.getStockPurchaseCost(stockToBuy.sym, numberOfSharesToBuy, "L") <= cashToSpend) {
+            let numberOfSharesToBuy = availableShares;
+
+            // Keep trying to find a smaller number of shares to buy until we reach a number we can afford
+            while (numberOfSharesToBuy > 0) {
+                let purchaseCost = ns.getStockPurchaseCost(stockToBuy.sym, numberOfSharesToBuy, "L");
+                if (purchaseCost <= spendableCash) {
                     ns.buyStock(stockToBuy.sym, numberOfSharesToBuy);
-                    ns.print("Bought " + numberOfSharesToBuy + " shares in " + stockToBuy.sym + " for " + ns.getStockPurchaseCost(stockToBuy.sym, numberOfSharesToBuy, "L"));
-                    cashToSpend -= ns.getStockPurchaseCost(stockToBuy.sym, numberOfSharesToBuy, "L");
+                    ns.print("Bought " + numberOfSharesToBuy.toLocaleString() + " shares in " + stockToBuy.sym + " for " + purchaseCost.toLocaleString());
+                    spendableCash -= purchaseCost;
                     break;
                 }
                 numberOfSharesToBuy = Math.floor(numberOfSharesToBuy * 0.9);
             }
+
         }
+
         await ns.sleep(6 * 1000);
     }
 }
