@@ -1,0 +1,210 @@
+// Array of all servers that don't need any ports opened
+// to gain root access. These have 16 GB of RAM
+var servers0Port = [
+    "foodnstuff",
+    "sigma-cosmetics",
+    "joesguns",
+    "nectar-net",
+    "hong-fang-tea",
+    "harakiri-sushi"
+];
+
+// Array of all servers that only need 1 port opened
+// to gain root access. These have 32 GB of RAM
+var servers1Port = [
+    "neo-net",
+    "zer0",
+    "max-hardware",
+    "iron-gym",
+    "CSEC"
+];
+
+var servers2Port = [
+    "phantasy",
+    "the-hub",
+    "omega-net",
+    "johnson-ortho",
+    "crush-fitness",
+    "avmnite-02h",
+    "silver-helix"
+];
+
+var servers3Port = [
+    "comptek",
+    "rothman-uni",
+    "catalyst",
+    "netlink",
+    "I.I.I.I",
+    "summit-uni",
+    "rho-construction",
+    "millenium-fitness"
+]
+
+var servers4Port = [
+    "syscore",
+    "aevum-police",
+    "alpha-ent",
+    "univ-energy",
+    "global-pharm",
+    "lexo-corp",
+    "snap-fitness",
+    "zb-def",
+    "unitalife",
+    "nova-med"
+
+]
+
+var servers5Port = [
+    "zb-institute",
+    "aerocorp",
+    "deltaone",
+    "icarus",
+    "infocomm",
+    "taiyang-digital",
+    "galactic-cyber",
+    "omnia",
+    "solaris",
+    "defcomm",
+    "zeus-med",
+    "darkweb"
+]
+
+var hackPrograms = {
+    'BruteSSH.exe' : brutessh,
+    'FTPCrack.exe' : ftpcrack,
+    'relaySMTP.exe' : relaysmtp,
+    'HTTPWorm.exe' : httpworm,
+    'SQLInject.exe' : sqlinject
+};
+
+var scriptMemoryUsed = 2.6;
+var scriptName = 'early-hack-template.script'
+
+
+function getNumPortHacks() {
+    var portHacks = 0;
+
+    var keys = Object.keys(hackPrograms);
+    for (var i = 0; i < keys.length; ++i) {
+        var filename = keys[i];
+        if (fileExists(filename, 'home')) {
+            portHacks += 1;
+        }
+    }
+
+    return portHacks;
+}
+
+
+function isServerHackable(hostname) {
+    if (getServerRequiredHackingLevel(hostname) > getHackingLevel()) {
+        return false;
+    }
+
+    if (getServerNumPortsRequired(hostname) > getNumPortHacks() && hasRootAccess(hostname)) {
+        return false;
+    }
+
+    if (hostname === 'home') {
+        return false
+    }
+
+    return true;
+}
+
+// Attempts to get root access (nuke) on the server
+// Returns true if successful, false otherwise
+function getRootAccess(hostname) {
+    if (hasRootAccess(hostname)) {
+        return true;
+    }
+
+    if (getServerNumPortsRequired(hostname) > getNumPortHacks()) {
+        return false;
+    }
+
+    var keys = Object.keys(hackPrograms);
+    for (var i = 0; i < keys.length; ++i) {
+        var filename = keys[i];
+        if (fileExists(filename, 'home')) {
+            hackPrograms[filename](hostname);
+        }
+    }
+
+    nuke(hostname);
+    return true;
+}
+
+// Starts the hacking script up on the server in question
+// Performs all steps necessary to be able to run the script
+// - run hack programs
+// - nuke
+// - scp hacking script
+// - run hacking script
+// Returns true if it was able to perform all setup and run the script
+//     false otherwise
+function startServerHacking(hostname) {
+    if (!getRootAccess(hostname)) {
+        return false;
+    }
+    scp(scriptName, hostname);
+
+    var threads = getNumThreadsToUse(hostname);
+    if (threads < 1) {
+        print("Skipping [" + hostname + "]: Not enough memory for any threads");
+        return true;
+    }
+    exec(scriptName, hostname, threads);
+    return true;
+}
+
+function getNumThreadsToUse(hostname) {
+    var serverRam = getServerRam(hostname);
+    var totalRam = serverRam[0];
+    var usedRam = serverRam[1];
+    var numThreads = totalRam / scriptMemoryUsed;
+    print("Calculating thread count for [" + hostname + "]: [" + totalRam + "] / [" + scriptMemoryUsed + "] = [" + (numThreads) + "]");
+    return Math.floor(numThreads);
+}
+
+// TODO: Figure out how we can keep trying if any of the servers could not be
+function startServersHacking(hostnames) {
+    var notRunnable = [];
+
+    for (var i = 0; i < hostnames.length; ++i) {
+        var hostname = hostnames[i];
+        if (!isRunning(scriptName, hostname)) {
+            if (!isServerHackable(hostname)) {
+                notRunnable.push(hostname);
+            } else {
+                startServerHacking(hostname);
+            }
+        }
+    }
+
+    return notRunnable;
+}
+
+while (startServersHacking(servers0Port).length > 0) {
+    sleep(60000);
+}
+
+while (startServersHacking(servers1Port).length > 0) {
+    sleep(60000);
+}
+
+while (startServersHacking(servers2Port).length > 0) {
+    sleep(60000);
+}
+
+while (startServersHacking(servers3Port).length > 0) {
+    sleep(60000);
+}
+
+while (startServersHacking(servers4Port).length > 0) {
+    sleep(60000);
+}
+
+while (startServersHacking(servers5Port).length > 0) {
+    sleep(60000);
+}

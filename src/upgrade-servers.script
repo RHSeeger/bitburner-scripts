@@ -1,0 +1,61 @@
+var target = args[0];
+var size = 4;
+var maxSize = 10;
+var script = "early-hack-template.script";
+var scriptRam = getScriptRam(script, "home");
+var maxServers = 23; // The game allows 24, but we have one of them just weakening in another script
+
+// TODO: This winds up costing twice as much as it needs to because we upgrade every server every level
+//       Should skip right to the end when money permits
+//       Maybe find the max level that the current amount of money can upgrade every server to, and start with that?
+
+var shouldContinue = true;
+while(size <= maxSize && shouldContinue) {
+    var ram = Math.pow(2, size);
+    var cost = getPurchasedServerCost(ram);
+    var numThreads = Math.floor(ram / scriptRam);
+
+    print("Upgrading servers to " + ram + " GB at a cost of " + cost + " each");
+
+    i = 0;
+    while(i < maxServers && shouldContinue) {
+        var isNew = false;
+        var hostname = "pserv-" + i;
+        var purchasedServers = getPurchasedServers();
+
+        if (purchasedServers.includes(hostname)) {
+
+            if (getServerMoneyAvailable("home") > (cost / 2)) { // don't spend more than half our money
+                var serverRam = getServerRam(hostname)
+                if (serverRam[0] < ram) {
+                    if (serverRam[1] > 0) {
+                        killall(hostname);
+                        // wait for the killall to finish?
+                        while (getServerRam(hostname)[1] > 0) {
+                        }
+                    }
+                    deleteServer(hostname);
+                    purchaseServer(hostname, ram);
+                    isNew = true;
+                    print(hostname + " upgraded to " + ram + " GB");
+                } else {
+                    print(hostname + " is already at " + ram + " GB or higher.");
+                }
+            }
+        } else {
+            if (getServerMoneyAvailable("home") > (cost / 2)) { // don't spend more than half our money
+                purchaseServer(hostname, ram);
+                isNew = true;
+            }
+        }
+
+        if (isNew) {
+            scp("targeted-hacking-script.script", hostname);
+            exec("targeted-hacking-script.script", hostname, numThreads, target);
+        }
+
+        ++i;
+    }
+
+    size += 1;
+}

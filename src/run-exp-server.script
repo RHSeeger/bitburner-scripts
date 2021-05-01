@@ -1,0 +1,50 @@
+
+var expServer = "server-xp";
+var targetHostname = "foodnstuff";
+var serverSize = Math.pow(2, 16); // 131072
+var numThreads = Math.floor(serverSize / getScriptRam("weaken.script", "home")); // 72817;
+
+function getServer() {
+    print("Looking for [" + expServer + "] in purchased servers");
+    var purchasedServers = getPurchasedServers();
+
+    if (purchasedServers.includes(expServer)) {
+        print("Found [" + expServer + "] in list of already purchased servers");
+        return expServer;
+    }
+
+    var name = purchaseServer(expServer, serverSize);
+    if (name === "") {
+        print("Failed to purchase new server [" + expServer + "]");
+        return null;
+    }
+
+    print("Purchased new server [" + expServer + "[");
+    return name;
+}
+
+function doIt() {
+    print("Starting up");
+    // Remove server 24 because it's in the way
+    var removeServerName = "pserv-24";
+    if (getPurchasedServers().includes(removeServerName)) {
+        killall(removeServerName);
+        deleteServer(removeServerName);
+    }
+
+    var hostname = getServer();
+    if (hostname === null) {
+        print("Unable to purchase exp server");
+    } else {
+        print("Deploying weaken script to [" + hostname + "]");
+        scp("weaken.script", "home", hostname);
+        exec("weaken.script", hostname, numThreads, targetHostname);
+        print("Started weaken script on [" + hostname + "] targeting [" + targetHostname + "] with [" + numThreads + "] threads");
+    }
+}
+
+doIt();
+while(true) {
+    // Because we want to be able to see the log when it's done
+    sleep(60000);
+}

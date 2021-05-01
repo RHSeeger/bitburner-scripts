@@ -1,0 +1,4 @@
+
+var size = Math.pow(2, args[0]);
+var cost = getPurchasedServerCost(size);
+tprint("Server Size [" + size + "] cost [" + cost + "]");
