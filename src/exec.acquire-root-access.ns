@@ -1,0 +1,130 @@
+/*
+ * Executable: exec.acquire-root-access.ns
+ *
+ * Iterate over all hosts in the system and gain root access to them
+ * Will run crack programs (BruteSSH, etc) to open ports as necessary
+ * Will run Nuke once ports are open
+ * If it does not have enough crack programs to get root on a host, will come back to it
+ * Will continue to run until every server on the network has root access
+ * Does NOT run weaken/grow/hack; relies on exec.hack-dist.ns for that
+ */
+
+import {
+    getServerList,
+    getHostname,
+    getServerNumPortsRequired,
+    getServerRequiredHackingLevel
+    } from 'lib.servers.ns';
+
+function getCrackPrograms(ns) {
+    return {
+        'BruteSSH.exe': ns.brutessh,
+        'FTPCrack.exe': ns.ftpcrack,
+        'relaySMTP.exe': ns.relaysmtp,
+        'HTTPWorm.exe': ns.httpworm,
+        'SQLInject.exe': ns.sqlinject
+    }
+}
+
+function getNumPortHacks(ns) {
+    var portHacks = 0;
+
+    var keys = Object.keys(getCrackPrograms(ns));
+    for (var i = 0; i < keys.length; ++i) {
+        var filename = keys[i];
+        if (ns.fileExists(filename, 'home')) {
+            portHacks += 1;
+        }
+    }
+
+    return portHacks;
+}
+
+function isServerHackable(ns, hostname) {
+    if (getServerRequiredHackingLevel(ns, hostname) > ns.getHackingLevel()) {
+        return false;
+    }
+
+    if (getServerNumPortsRequired(hostname) > getNumPortHacks(ns) && hasRootAccess(hostname)) {
+        return false;
+    }
+
+    if (hostname === 'home') {
+        return false
+    }
+
+    return true;
+}
+
+/*
+ * Attempts to acquire root on the list of servers.
+ * Returns a list of serves is was unable to acquire root on.
+ */
+function acquireRootAllServers(ns, servers) {
+    let rooted = [];
+    let unrooted = [];
+
+    servers.forEach((server) => {
+        //ns.tprint("Server: " + JSON.stringify(server));
+        if (acquireRootOneServer(ns, server)) {
+            rooted.push(server);
+        } else {
+            unrooted.push(server);
+        }
+    });
+
+    ns.print("Successfully rooted (" + rooted.length + "): " + rooted.map((server) => getHostname(server)).join(", "));
+    ns.print("Failed to root (" + unrooted.length + "): " + unrooted.map((server) => getHostname(server)).join(", "));
+
+    return unrooted;
+}
+
+// Attempts to get root access (nuke) on the server
+// Returns true if successful, false otherwise
+function acquireRootOneServer(ns, server) {
+    const hostname = getHostname(server);
+    if (ns.hasRootAccess(hostname)) {
+        //ns.print("Already have root access: " + hostname);
+        return true;
+    }
+
+    const numPortsRequired = getServerNumPortsRequired(ns, server);
+    if (numPortsRequired > getNumPortHacks(ns)) {
+        return false;
+    }
+
+    const crackPrograms = getCrackPrograms(ns);
+    var keys = Object.keys(crackPrograms);
+    for (var i = 0; i < keys.length && i < numPortsRequired; ++i) {
+        var filename = keys[i];
+        if (ns.fileExists(filename, 'home')) {
+            crackPrograms[filename](hostname);
+        } else {
+            throw("Unable to locale hack script: " + filename);
+        }
+    }
+
+    ns.nuke(hostname);
+
+    return true;
+}
+
+export async function main(ns) {
+    let servers = getServerList(ns);
+
+    ns.tprint("All servers (" + servers.length + "): " + servers.map((server) => getHostname(server)).join(", "));
+
+    do {
+        servers = acquireRootAllServers(ns, servers);
+        if (servers.length > 0) {
+            // Wait a bit, then retry any servers we missed
+            await ns.sleep(6 * 1000);
+        }
+    } while (servers.length > 0);
+
+    ns.print("Done acquiring root on servers");
+    while (true) {
+        await ns.sleep(6 * 1000);
+    }
+
+}

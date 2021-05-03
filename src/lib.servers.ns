@@ -1,0 +1,110 @@
+/*
+ * Library: lib.servers.ns
+ *
+ * Library file to find all servers
+ *
+ * Some code borrowed/modified from
+ *     https://gist.github.com/jaguilar/a8f7cb8da78cbddc2a06415fdf97df27
+ */
+
+const KEY_HOSTNAME = 'hostname';
+const KEY_MEMORY_TOTAL = 'memory_total';
+const KEY_MEMORY_USED = 'memory_total';
+const KEY_SIZE = 'size';
+const KEY_DEPTH = 'depth';
+const KEY_NUM_PORTS_REQUIRED = 'num_ports_required';
+const KEY_REQUIRED_HACKING_LEVEL = 'required_hacking_level';
+
+export function getServerList(ns) {
+    let result = [];
+    let visited = { 'home': 0 };
+    let queue = Object.keys(visited);
+    let hostname;
+
+    while ((hostname = queue.pop())) {
+        let depth = visited[hostname] + 1;
+
+        ns.scan(hostname).forEach(childHostname => {
+            if (!visited[childHostname]) {
+                queue.push(childHostname);
+                visited[childHostname] = depth;
+                result.push({
+                    [KEY_HOSTNAME]: childHostname,
+                    [KEY_DEPTH]: depth
+                });
+            }
+        });
+    }
+
+    return result;
+}
+
+export function getServerRequiredHackingLevel(ns, server) {
+    if (!server.hasOwnProperty(KEY_REQUIRED_HACKING_LEVEL) || server[KEY_REQUIRED_HACKING_LEVEL] === null) {
+        server[KEY_REQUIRED_HACKING_LEVEL] = ns.getServerRequiredHackingLevel(server[KEY_HOSTNAME]);
+    }
+
+    return server[KEY_REQUIRED_HACKING_LEVEL];
+}
+
+export function getMemoryTotal(ns, server) {
+    if (server.hasOwnProperty(KEY_MEMORY_TOTAL) && server[KEY_MEMORY_TOTAL] !== null) {
+        return server[KEY_MEMORY_TOTAL];
+    }
+
+    const size = getServerSize(ns, server);
+    // Getting the size may have set the memory
+    if (server.hasOwnProperty(KEY_MEMORY_TOTAL) && server[KEY_MEMORY_TOTAL] !== null) {
+        return server[KEY_MEMORY_TOTAL];
+    }
+
+    server[KEY_MEMORY_TOTAL] = Math.pow(2, getServerSize(ns, server));
+    return server[KEY_MEMORY_TOTAL];
+}
+
+export function getMemoryUsed(ns, server) {
+    if (!server.hasOwnProperty(KEY_SIZE) || server[KEY_SIZE] === null) {
+        const memory = ns.getServerRam(server[KEY_HOSTNAME]); // [ total_memory, used_memory
+        server[KEY_MEMORY_TOTAL] = memory[0];
+        server[KEY_MEMORY_USED] = memory[1];
+        server[KEY_SIZE] = Math.floor(Math.log2(memory[0]));
+    }
+
+    return server[KEY_MEMORY_USED];
+}
+
+export function getMemoryAvailable(ns, server) {
+    let memoryTotal = getMemoryTotal(ns, server);
+    let memoryUsed = getMemoryUsed(ns, server);
+    return memoryTotal - memoryUsed;
+}
+
+export function getServerNumPortsRequired(ns, server) {
+    if (!server.hasOwnProperty(KEY_NUM_PORTS_REQUIRED) || server[KEY_NUM_PORTS_REQUIRED] === null) {
+        server[KEY_NUM_PORTS_REQUIRED] = ns.getServerNumPortsRequired(server[KEY_HOSTNAME]);
+    }
+
+    return server[KEY_NUM_PORTS_REQUIRED];
+}
+
+/*
+ * Used to update the amount of used and available memory on the server object
+ */
+export function useMemory(ns, server, gb) {
+    server[KEY_MEMORY_USED] = getMemoryUsed(ns, server) + gb;
+}
+
+export function getServerSize(ns, server) {
+    if (!server.hasOwnProperty(KEY_SIZE) || server[KEY_SIZE] === null) {
+        const memory = ns.getServerRam(server[KEY_HOSTNAME]); // [ total_memory, used_memory
+        server[KEY_MEMORY_TOTAL] = memory[0];
+        server[KEY_MEMORY_USED] = memory[1];
+        server[KEY_SIZE] = Math.floor(Math.log2(memory[0]));
+    }
+
+    return server[KEY_SIZE];
+}
+
+export function getHostname(server) {
+    return server[KEY_HOSTNAME];
+}
