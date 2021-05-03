@@ -1,19 +1,30 @@
 
 var expServer = "server-xp";
-var targetHostname = "foodnstuff";
-var serverSize = Math.pow(2, 16); // 131072
-var numThreads = Math.floor(serverSize / getScriptRam("weaken.script", "home")); // 72817;
+var DEFAULT_TARGET = "foodnstuff";
+var desiredMemory = Math.pow(2, 16); // 131072
+var numThreads = Math.floor(desiredMemory / getScriptRam("weaken.script", "home")); // 72817;
 
-function getServer() {
+function createOrLookupServer() {
     print("Looking for [" + expServer + "] in purchased servers");
     var purchasedServers = getPurchasedServers();
 
     if (purchasedServers.includes(expServer)) {
         print("Found [" + expServer + "] in list of already purchased servers");
-        return expServer;
+
+        var existingMemory = getServerRam(expServer);
+        if (existingMemory[0] >= desiredMemory) {
+            print("Existing server is sufficient with memory:" + existingMemory[0].toLocaleString());
+            return expServer;
+        }
+
+        // It's not sufficient, so delete it (so we can purchase a new one)
+        do {
+            killall(expServer);
+        } while (getServerRam(expServer)[1] > 0);
+        deleteServer(expServer);
     }
 
-    var name = purchaseServer(expServer, serverSize);
+    var name = purchaseServer(expServer, desiredMemory);
     if (name === "") {
         print("Failed to purchase new server [" + expServer + "]");
         return null;
@@ -25,19 +36,32 @@ function getServer() {
 
 function doIt() {
     print("Starting up");
+
+    // The server that the purchased one will target with [weaken.script]
+    var targetHostname = args[0];
+    if (!targetHostname) {
+        targetHostname = DEFAULT_TARGET;
+    }
+    print("Setting up experience server, targeting: " + targetHostname);
+
     // Remove server 24 because it's in the way
     var removeServerName = "pserv-24";
     if (getPurchasedServers().includes(removeServerName)) {
-        killall(removeServerName);
+        do {
+            killall(removeServerName);
+        } while (getServerRam(removeServerName)[1] > 0);
         deleteServer(removeServerName);
     }
 
-    var hostname = getServer();
+    var hostname = createOrLookupServer();
     if (hostname === null) {
         print("Unable to purchase exp server");
     } else {
         print("Deploying weaken script to [" + hostname + "]");
         scp("weaken.script", "home", hostname);
+        do {
+            killall(hostname);
+        } while (getServerRam(hostname)[1] > 0);
         exec("weaken.script", hostname, numThreads, targetHostname);
         print("Started weaken script on [" + hostname + "] targeting [" + targetHostname + "] with [" + numThreads + "] threads");
     }

@@ -1,0 +1,15 @@
+
+
+
+export async function main(ns) {
+    const hostname = ns.args[0];
+    if (!hostname) {
+        ns.tprint("Usage: run get-host-money.ns [hostname]");
+        return;
+    }
+
+    const moneyMax = ns.getServerMaxMoney(hostname);
+    const moneyAvail = ns.getServerMoneyAvailable(hostname);
+
+    ns.tprint("Server [" + hostname + "] has " + moneyAvail.toLocaleString() + " of " + moneyAvail.toLocaleString() + " available");
+}

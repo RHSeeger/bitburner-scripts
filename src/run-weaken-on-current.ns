@@ -1,0 +1,20 @@
+/*
+ * Runs the weaken script on the current server, with as many threads as current memory will allow
+ */
+
+const SCRIPT = "weaken.script";
+const TARGET_HOST = "foodnstuff";
+
+export async function main(ns) {
+    const hostname = ns.getHostname();
+    const memory = ns.getServerRam(hostname);
+    const scriptRam = ns.getScriptRam(SCRIPT, hostname);
+    const availableRam = memory[0] - memory[1];
+    const numThreads = Math.floor(availableRam / scriptRam);
+
+    ns.tprint("Current server [" + hostname + "] has " + availableRam.toLocaleString() + " of " + memory[0].toLocaleString() + " memory available");
+    ns.tprint("Running [" + SCRIPT + "] using " + numThreads + " threads");
+
+    ns.exec(SCRIPT, hostname, numThreads, TARGET_HOST);
+
+}
