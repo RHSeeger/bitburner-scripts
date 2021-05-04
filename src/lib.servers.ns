@@ -14,6 +14,8 @@ const KEY_SIZE = 'size';
 const KEY_DEPTH = 'depth';
 const KEY_NUM_PORTS_REQUIRED = 'num_ports_required';
 const KEY_REQUIRED_HACKING_LEVEL = 'required_hacking_level';
+const KEY_PARENT = 'parent';
+const KEY_MONEY_MAX = 'money_max';
 
 export function getServerList(ns) {
     let result = [];
@@ -30,13 +32,18 @@ export function getServerList(ns) {
                 visited[childHostname] = depth;
                 result.push({
                     [KEY_HOSTNAME]: childHostname,
-                    [KEY_DEPTH]: depth
+                    [KEY_DEPTH]: depth,
+                    [KEY_PARENT]: hostname
                 });
             }
         });
     }
 
     return result;
+}
+
+export function getParent(server) {
+    return server[KEY_PARENT];
 }
 
 export function getServerRequiredHackingLevel(ns, server) {
@@ -86,6 +93,15 @@ export function getServerNumPortsRequired(ns, server) {
 
     return server[KEY_NUM_PORTS_REQUIRED];
 }
+
+export function getMoneyMax(ns, server) {
+    if (!server.hasOwnProperty(KEY_MONEY_MAX) || server[KEY_MONEY_MAX] === null) {
+        server[KEY_MONEY_MAX] = ns.getServerMaxMoney(server[KEY_HOSTNAME]);
+    }
+
+    return server[KEY_MONEY_MAX];
+}
+
 
 /*
  * Used to update the amount of used and available memory on the server object

@@ -1,0 +1,57 @@
+/*
+ * Executable: exec.acquire-root-access.ns
+ *
+ * Iterate over all hosts in the system and gain root access to them
+ * Will run crack programs (BruteSSH, etc) to open ports as necessary
+ * Will run Nuke once ports are open
+ * If it does not have enough crack programs to get root on a host, will come back to it
+ * Will continue to run until every server on the network has root access
+ * Does NOT run weaken/grow/hack; relies on exec.hack-dist.ns for that
+ */
+
+import {
+    getServerList,
+    getHostname,
+    getServerNumPortsRequired,
+    getServerRequiredHackingLevel,
+    getParent,
+    getMoneyMax
+    } from 'lib.servers.ns';
+
+
+function printServer(ns, server, depth, servers) {
+    var indent = "";
+    for (var i = 0; i < depth; i++) {
+        indent = indent + "  ";
+    }
+    const hostname = getHostname(server);
+    const ports = getServerNumPortsRequired(ns, server);
+    const maxMoney = getMoneyMax(ns, server)
+    const hackingRequired = getServerRequiredHackingLevel(ns, server);
+
+    const serverInfo = hostname + " | " + ports + " ports | " + hackingRequired + " hacking | " + maxMoney.toLocaleString() + " money";
+    let output = "\n" + indent + serverInfo;
+    servers
+        .filter((childServer) => getParent(childServer) === hostname)
+        .forEach((childServer) => {
+            output = output + printServer(ns, childServer, depth + 1, servers)
+        });
+
+    return output;
+}
+
+export async function main(ns) {
+    let servers = getServerList(ns);
+    const purchasedServers = ns.getPurchasedServers();
+    servers = servers.filter((server) => !purchasedServers.includes(getHostname(server)));
+
+    let output = "";
+    servers
+        .filter((childServer) => getParent(childServer) === 'home')
+        .forEach((childServer) => {
+            //ns.tprint("child server: " + getHostname(childServer));
+            output = output + printServer(ns, childServer, 0, servers)
+        });
+
+    ns.tprint("Servers: " + output);
+}
