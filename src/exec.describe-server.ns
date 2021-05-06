@@ -1,0 +1,39 @@
+/*
+ * Watches the target host (args[0]) and when it's current security level
+ * gets below a certain value (args[1]), signal [exec.hack-dist.ns] to
+ * let it know it can use the server
+ */
+
+import {signal} from 'lib.signal.ns';
+
+export async function main(ns) {
+    const hostname = ns.args[0]
+
+    if (!hostname) {
+        ns.tprint("Usage: exec.describe-server.ns [hostname]");
+        return;
+    }
+
+    if (!ns.serverExists(hostname)) {
+        ns.tprint("Server [" + hostname + "] does not exist");
+        return;
+    }
+
+    ns.tprint("Memory: " + ns.getServerMaxRam(hostname).toLocaleString() + " total / "
+        + ns.getServerUsedRam(hostname) + " used");
+    ns.tprint("Money: " + ns.getServerMoneyAvailable(hostname).toLocaleString()
+        + " of " + ns.getServerMaxMoney(hostname).toLocaleString());
+    ns.tprint("Hack Chance: " + ns.hackChance(hostname));
+    ns.tprint("Security: " + ns.getServerBaseSecurityLevel(hostname) + " base / "
+        + ns.getServerMinSecurityLevel(hostname) + " min / "
+        + ns.getServerSecurityLevel(hostname) + " current");
+    ns.tprint("Root Access? " + (ns.hasRootAccess(hostname)
+        + " (" + ns.getServerNumPortsRequired(hostname) + " ports required)"));
+    ns.tprint("Required Hacking Level: " + ns.getServerRequiredHackingLevel(hostname));
+    ns.tprint("Growth: " + ns.getServerGrowth(hostname));
+
+    const processes = ns.ps(hostname);
+    ns.tprint("Processes: " + (processes.length === 0
+            ? "N/A"
+            : ("\n\t" + processes.map((process) => JSON.stringify(process)).join("\n\t"))));
+}

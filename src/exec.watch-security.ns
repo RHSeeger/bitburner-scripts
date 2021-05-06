@@ -11,7 +11,7 @@ export async function main(ns) {
     const securityLevelGoal = ns.args[1];
 
     if (!target || !securityLevelGoal) {
-        ns.tprint("Usage: exec.watch-security.ns [target hostname] [security level goal]")
+        ns.tprint("Usage: exec.watch-security.ns [target hostname] [security level goal]");
         return;
     }
 

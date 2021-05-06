@@ -133,7 +133,7 @@ async function doHacks(ns, targetServers, attackServers) {
             // We assume that we are able to afford to run one of these on the local server.
             // If not, we are probably under-buying local ram.
             if (!ns.run(SCRIPT_WATCH_SECURITY, 1, targetHostname, (3 + minSecurityLevel))) {
-                ns.tpring("Unable to run [" + SCRIPT_WATCH_SECURITY + "] on [" + targetHostname + "]");
+                ns.tprint("Unable to run [" + SCRIPT_WATCH_SECURITY + "] on [" + targetHostname + "]");
             }
         }
 
