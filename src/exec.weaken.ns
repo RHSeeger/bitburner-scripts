@@ -1,0 +1,20 @@
+/*
+ * Executable: exec.weaken.ns
+ *
+ * Runs weaken targeted at the specified hostname
+ *
+ * Usage: run exec.weaken.ns [hostname]
+ */
+
+
+export async function main(ns) {
+    let hostname = ns.args[0];
+    if (!hostname) {
+        ns.tprint("Usage: run exec.weaken.ns [hostname]");
+        return;
+    }
+
+    while (true) {
+        await ns.weaken(hostname);
+    }
+}

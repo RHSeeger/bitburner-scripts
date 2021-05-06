@@ -1,0 +1,232 @@
+/*
+ * Executable
+ * Runs hacking scripts on available servers, as appropriate
+ * Copied/modified from
+ *     https://gist.github.com/jaguilar/a8f7cb8da78cbddc2a06415fdf97df27
+ */
+
+import {
+    execa
+    } from 'lib.execa.ns';
+import {
+    awaitSignal,
+    consumeSignal
+    } from 'lib.signal.ns'
+import {
+    getServerList,
+    getMemoryTotal,
+    getServerSize,
+    getHostname,
+    getMemoryAvailable,
+    useMemory
+    } from 'lib.servers.ns';
+
+const SCRIPT_WATCH_SECURITY = "exec.watch-security.ns";
+const SCRIPT_FLEXIHACK = "exec.flexihack.ns";
+const SCRIPT_WEAKEN = "exec.weaken.ns";
+
+const SCRIPTS_TO_COPY = [
+    SCRIPT_FLEXIHACK,
+    SCRIPT_WEAKEN,
+    'lib.servers.ns'
+];
+const TAG_HACKING = "hacking";
+const TAG_WEAKENING = "weakening";
+
+const HOME_RESERVED_MEMORY = 100;
+
+function resetScripts(ns, server) {
+    SCRIPTS_TO_COPY.forEach((scriptName) => {
+        if (!ns.fileExists(scriptName, 'home')) {
+            ns.tprint("Script not found: " + scriptName);
+        }
+    });
+
+    const hostname = getHostname(server);
+    ns.scriptKill(SCRIPT_FLEXIHACK, hostname);
+    ns.scriptKill(SCRIPT_WEAKEN, hostname);
+    if (hostname !== "home") {
+        do {
+            ns.killall(hostname);
+        } while (ns.getServerRam(hostname)[1] > 0);
+        ns.scp(SCRIPTS_TO_COPY, "home", hostname);
+    }
+}
+
+/*
+ * Runs [numberToRun] threads of [jobScript] on [servers] targeting [targetHostname]
+ *
+ * Tag is an unused argument to differentiate different instances of the same script.
+ */
+function scheduleOn(ns, attackServers, jobScript, numberToRun, targetHostname, tag) {
+    ns.tprint("scheduleOn: [" + jobScript + "] targeting [" + targetHostname + "] on " + attackServers.length + " servers");
+
+    // Script should have been copied out to all candidate hosts already.
+    let ramPerTask = ns.getScriptRam(jobScript, "home");
+
+    while (numberToRun > 0 && attackServers.length > 0) {
+        const server = attackServers[0];
+        const attackerHostname = getHostname(server);
+        const memoryAvailable = getMemoryAvailable(ns, server);
+        //ns.tprint("Memory available on [" + attackerHostname + "]: " + memoryAvailable);
+
+        // Schedule as many threads of the task as possible on the first host.
+        const threadsOnThisHost = Math.min(Math.floor(memoryAvailable / ramPerTask), numberToRun);
+        ns.tprint("Threads to run on [" + attackerHostname + "]: " + threadsOnThisHost + " threads "
+            + "(" + memoryAvailable + " memory available, " + ramPerTask + " per task");
+
+        numberToRun -= threadsOnThisHost;
+        if (threadsOnThisHost > 0) {
+            let argList = [jobScript, attackerHostname, threadsOnThisHost, targetHostname, tag];
+            ns.tprint("execute: " + argList);
+            if (execa(ns, argList)) {
+                useMemory(ns, server, (threadsOnThisHost * ramPerTask));
+            } else {
+                ns.exit(); // TODO: Remove me once we know what's going on
+            }
+            // TODO: The above is failing and we just keep trying.. something weird is going on
+            //       But pretending it succeeded and the memory is used up is a workaround for now
+            //       But WHY does it fail? It seems to have enough memory
+            //useMemory(ns, server, (threadsOnThisHost * ramPerTask));
+        }
+
+        // If we still have tasks left, that means we exhausted the RAM of this host.
+        if (numberToRun > 0) {
+            ns.tprint("consumed all ram available on " + attackerHostname);
+            attackServers.shift();
+        }
+    }
+
+    return attackServers;
+}
+
+// targets is an array of target machines to weaken and/or hack.
+// servers is a list of server objects (see lib.servers.ns)
+async function doHacks(ns, targetServers, attackServers) {
+    // Iterate over the targets, which should be in order of easiest to hardest.
+    // We're going to spend as many threads as possible to weaken each target to
+    // get it to its weakest level as fast as possible.
+
+    // We spawn at least a few flexihacks on each server so handled to make early
+    // cashflow less painful, although things only really get hopping once we
+    // have weakened the biggest server we can hack. At that point, we dedicate
+    // all excess capacity to hacking said server, which gets lucrative fast.
+    let weakenTargets = targetServers.slice(0, targetServers.length);
+    while (weakenTargets.length > 0 && attackServers.length > 0) {
+        const target = weakenTargets.shift();
+        const targetHostname = getHostname(target);
+
+        // ns.tprint("weakenloop: " + targetHostname);
+
+        let minSecurityLevel = ns.getServerMinSecurityLevel(targetHostname); // convert this to servers function
+        if (ns.getServerSecurityLevel(targetHostname) <= (3 + minSecurityLevel)) {
+            //ns.tprint("already weakened: " + targetHostname);
+            // Just spawn one weaken and a round of flexihacks. This is to make early game cashflow less painful.
+            attackServers = scheduleOn(ns, attackServers, SCRIPT_WEAKEN, 1, targetHostname, TAG_HACKING);
+            attackServers = scheduleOn(ns, attackServers, SCRIPT_FLEXIHACK, 6, targetHostname, TAG_HACKING);
+        } else {
+            // Spawn only weakens until security is near minimum.
+            let numberOfWeakens = Math.floor((ns.getServerSecurityLevel(targetHostname) - ns.getServerMinSecurityLevel(targetHostname)) / 0.05);
+            //ns.tprint("needs " + numberOfWeakens + " weaken threads");
+            attackServers = scheduleOn(ns, attackServers, SCRIPT_WEAKEN, numberOfWeakens, targetHostname, TAG_WEAKENING);
+            // Watch for the security level on this host to get low, and signal ourselves when it does.
+            // We assume that we are able to afford to run one of these on the local server.
+            // If not, we are probably under-buying local ram.
+            if (!ns.run(SCRIPT_WATCH_SECURITY, 1, targetHostname, (3 + minSecurityLevel))) {
+                ns.tpring("Unable to run [" + SCRIPT_WATCH_SECURITY + "] on [" + targetHostname + "]");
+            }
+        }
+
+        await ns.sleep(10); // to give the ui a chance to update
+    }
+
+    ns.tprint("Hacks Run - Target Servers Left: " + weakenTargets.map((server) => getHostname(server)).join(", "));
+    ns.tprint("Hacks Run - Attack Servers Left: " + attackServers.map((server) => getHostname(server)).join(", "));
+
+    // If there are any resources left, it's time to hack! We will schedule up to ~100
+    // hack workers targetting a given server. Generally speaking we want to target
+    // servers that are deeper in the search tree. These will tend to appear at the end
+    // of the target list.
+    while (targetServers.length > 0 && attackServers.length > 0) {
+        let target = targetServers.pop();
+        let targetHostname = getHostname(target);
+        ns.tprint("flexihack loop " + targetHostname + " with " + attackServers.length + " attack servers");
+
+        // We stagger the scheduling of flexihacks so that not all hundred threads
+        // are hacking or growing at the same time. We believe this will reduce waste.
+        // We are also staggering the scheduling of weakens, which seems like a waste.
+        // We can probably make a reasonable guess as to how many will actually be used.
+        //
+        // Rule of thumb: one weaken per six flexihacks. Derivation: hack takes
+        // 0.002 security, grow takes 2.5x as long at takes 0.005. Weaken takes ~3.5x
+        // and 0.05. Divide the rates through and it seems like no matter whether you're
+        // doing grow or hack, you're using about 1/6th as much security per unit time (
+        // not accounting for failed hacks).
+        // for (let i = 0; attackServers.length > 0 && i < 15; ++i) { // TODO: why 15?
+
+        const scriptSizeWeaken = ns.getScriptRam(SCRIPT_WEAKEN, "home");
+        const scriptSizeFlexi = ns.getScriptRam(SCRIPT_FLEXIHACK, "home");
+
+        let rounds = 0;
+        for (; attackServers.length > 0 && rounds < 150; rounds++) { // Should never go over 150, but lets play it safe
+            // Determine the total amount of threads available across all server
+            // Then use half of them, down to a minimum of 1 and 6
+            // Should make this a maximum of log2(threads) loops
+            const totalThreads = attackServers
+                .map((server) => getMemoryAvailable(ns, server))
+                .map((availableMemory) => Math.floor(availableMemory / (scriptSizeFlexi + scriptSizeWeaken)))
+                .reduce((accumulator, currentValue) => accumulator + currentValue);
+
+            ns.tprint("scheduling flexihack round " + rounds + " with " + totalThreads + " total threads");
+            const weakenThreads = Math.max(1, Math.floor((totalThreads / 7.0) * 1));
+            const flexiThreads = Math.max(6, Math.floor((totalThreads / 7.0) * 6));
+            // Add the "rounds" to the tag so that the system considers them "different" scripts
+            attackServers = scheduleOn(ns, attackServers, SCRIPT_WEAKEN, weakenThreads, targetHostname, TAG_HACKING + "/" + rounds);
+            attackServers = scheduleOn(ns, attackServers, SCRIPT_FLEXIHACK, flexiThreads, targetHostname, TAG_HACKING + "/" + rounds);
+
+            await ns.sleep(10); // to give the ui a chance to update
+        }
+        ns.tprint("scheduled flexihack rounds total " + rounds);
+    }
+}
+
+function getTargetServers(ns) {
+    const servers = getServerList(ns);
+    const purchasedServers = ns.getPurchasedServers();
+    return servers.filter((server) => !purchasedServers.includes(getHostname(server)));
+}
+
+export async function main(ns) {
+    consumeSignal(ns);
+
+    while (true) {
+        const servers = getServerList(ns);
+        const purchasedServers = ns.getPurchasedServers();
+
+        // Generate the list of servers we want to target with hacks
+        const targetServers = servers
+            .filter((server) => !purchasedServers.includes(getHostname(server)))
+            .filter((server) => !["darkweb", "home"].includes(getHostname(server)))
+            .filter((server) => ns.hasRootAccess(getHostname(server)) === true);
+        ns.tprint("Target Servers = " + targetServers.map((server) => getHostname(server)).join(", "));
+
+        // Generate the list of servers that we will run the hacks from
+        // TODO: Figure out how to add home later
+        let attackServers = servers
+            .filter((server) => ns.hasRootAccess(getHostname(server)))
+            .filter((server) => !["darkweb", "home"].includes(getHostname(server)));
+        ns.tprint("Attack Servers = " + attackServers.map((server) => getHostname(server)).join(", "));
+
+        // Cancel all running weakens and flexihacks on hosts, and record
+        // their available RAM.
+        attackServers.forEach((server) => resetScripts(ns, server));;
+        await ns.sleep(1000);
+
+        await doHacks(ns, targetServers, attackServers);
+
+        // At the end of the loop, we wait for a signal that something has changed.
+        // This entails seeing any value in the signalPort.
+        await awaitSignal(ns);
+        ns.tprint("notified! restarting everything");
+    }
+}

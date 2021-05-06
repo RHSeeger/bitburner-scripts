@@ -1,0 +1,11 @@
+/*
+ * Executable: exec.notify.ns
+ *
+ * Notifies [exec.hack-dist.ns] that it should reconfigure hacking
+ */
+
+import {signal} from 'lib.signal.ns';
+
+export async function main(ns) {
+    signal(ns);
+}

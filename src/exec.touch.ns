@@ -1,0 +1,15 @@
+/*
+ * Executable: exec.touch.ns
+ *
+ * Creates a file on the home server
+ */
+
+export async function main(ns) {
+    const filename = ns.args[0];
+
+    if (ns.fileExists(filename)) {
+        return;
+    }
+
+    ns.write(filename, 'touch');
+}

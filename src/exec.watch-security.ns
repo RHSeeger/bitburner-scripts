@@ -1,0 +1,23 @@
+/*
+ * Watches the target host (args[0]) and when it's current security level
+ * gets below a certain value (args[1]), signal [exec.hack-dist.ns] to
+ * let it know it can use the server
+ */
+
+import {signal} from 'lib.signal.ns';
+
+export async function main(ns) {
+    const target = ns.args[0]
+    const securityLevelGoal = ns.args[1];
+
+    if (!target || !securityLevelGoal) {
+        ns.tprint("Usage: exec.watch-security.ns [target hostname] [security level goal]")
+        return;
+    }
+
+    while (ns.getServerSecurityLevel(target) > securityLevelGoal) {
+        await ns.sleep(6000);
+    }
+
+    signal(ns);
+}

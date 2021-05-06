@@ -9,7 +9,7 @@
 
 const KEY_HOSTNAME = 'hostname';
 const KEY_MEMORY_TOTAL = 'memory_total';
-const KEY_MEMORY_USED = 'memory_total';
+const KEY_MEMORY_USED = 'memory_used';
 const KEY_SIZE = 'size';
 const KEY_DEPTH = 'depth';
 const KEY_NUM_PORTS_REQUIRED = 'num_ports_required';

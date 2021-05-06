@@ -1,0 +1,27 @@
+/*
+ * Executable
+ * Hacks/Grows server as appropriate
+ * Copied/modified from
+ *     https://gist.github.com/jaguilar/a8f7cb8da78cbddc2a06415fdf97df27
+ *
+ * Usage: run exec.flexihack.ns [hostname]
+ */
+
+const GROW_MONEY = 0.95;
+
+export async function main(ns) {
+    let hostname = ns.args[0];
+    if (!hostname) {
+        ns.tprint("Usage: run exec.flexihack.ns [hostname]");
+        return;
+    }
+
+    let maxMoney = ns.getServerMaxMoney(hostname);
+    while (true) {
+        if (ns.getServerMoneyAvailable(hostname) < (GROW_MONEY * maxMoney)) {
+            await ns.grow(hostname);
+        } else {
+            await ns.hack(hostname);
+        }
+    }
+}

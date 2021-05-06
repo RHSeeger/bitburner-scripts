@@ -1,0 +1,85 @@
+/*
+ * Library
+ * Fuctions for running code on another server
+ * Copied/modified from
+ *     https://gist.github.com/jaguilar/a8f7cb8da78cbddc2a06415fdf97df27
+ */
+
+export function maxThreads(ns, command, hostname) {
+    const serverRam = ns.getServerRam(hostname);
+    const scriptRam = ns.getScriptRam(command, hostname);
+    const threads = Math.floor((serverRam[0] - serverRam[1]) / scriptRam);
+    ns.print("maxThreads(" + command + ", " + hostname + "): " + threads);
+    return threads;
+}
+
+// I'm not happy with this function
+export function execa(ns, argList) {
+    const script = argList[0];
+    const onHostname = argList[1];
+
+    ns.scp(script, "home", argList[1]);
+
+    let nthreads = 0;
+    if (argList.length < 3) {
+        nthreads = 1;
+    } else {
+        nthreads = argList[2];
+    }
+    if (nthreads === 0) {
+        return;
+    }
+
+    {
+        const memory = ns.getServerRam(onHostname);
+        const memoryAvailable = memory[0] - memory[1];
+        const ramPerTask = ns.getScriptRam(script, "home");
+
+        const memoryUsed2 = ns.getServerUsedRam(onHostname);
+        const memoryTotal2 = ns.getServerMaxRam(onHostname);
+        const memoryAvailable2 = (memoryTotal2 - memoryUsed2);
+
+        //ns.tprint("Threads to run [" + script + " on [" + onHostname + "]: " + nthreads + " threads "
+        //    + "(" + memoryAvailable + " memory available, " + ramPerTask + " per task");
+        //ns.tprint("More info on memory from new apis: (total=" + memoryTotal2.toLocaleString() + ")"
+        //    + " (used=" + memoryUsed2.toLocaleString() + ")"
+        //    + " (available=" + memoryAvailable2.toLocaleString() + ")");
+    }
+
+    if (argList.length == 2) {
+        if (ns.exec(script, onHostname, nthreads) === 0) {
+            ns.tprint("Failed to start script/2: " + argList);
+            return false;
+        }
+        return true;
+    } else if (argList.length == 3) {
+        if (ns.exec(script, onHostname, nthreads) === 0) {
+            ns.tprint("Failed to start script/3: " + argList);
+            return false;
+        }
+        return true;
+    } else if (argList.length == 4) {
+        if (ns.exec(script, onHostname, nthreads, argList[3]) === 0) {
+            ns.tprint("Failed to start script/4: " + argList);
+            return false;
+        }
+        return true;
+    } else if (argList.length == 5) {
+        if ( ns.exec(script, onHostname, nthreads, argList[3], argList[4]) === 0) {
+            ns.tprint("Failed to start script/5: " + argList);
+            return false;
+        }
+        return true;
+    } else if (argList.length == 6) {
+        if (ns.exec(script, onHostname, nthreads, argList[3], argList[4], argList[5]) === 0) {
+            ns.tprint("Failed to start script/6: " + argList);
+            return false;
+        }
+        return true;
+    }
+
+    ns.tprint("Unable to run script - illegal args");
+    return false;
+}
+
+// execa(args);

@@ -1,0 +1,27 @@
+/*
+ * Library: lib.signal.ns
+ *
+ * Code to allow signaling exec.hack-dist.ns to let it know to redistribute scripts
+ */
+
+const SIGNAL_FILENAME = "hack-dist_notification.txt";
+const TOUCH_SCRIPT = "exec.touch.ns";
+
+export function signal(ns) {
+    ns.tprint("notifying hack-dist.script of a rescheduling condition");
+    ns.exec(TOUCH_SCRIPT, "home", 1, SIGNAL_FILENAME);
+}
+
+export function consumeSignal(ns) {
+    if (ns.fileExists(SIGNAL_FILENAME)) {
+        ns.rm(SIGNAL_FILENAME);
+        return true;
+    }
+    return false;
+}
+
+export async function awaitSignal(ns) {
+    while (!consumeSignal(ns)) {
+        await ns.sleep(10000);
+    }
+}
