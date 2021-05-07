@@ -1,0 +1,46 @@
+/*
+ * Executeable: exec.deepscan.ns
+ *
+ * prints the entire tree starting from home, with clickable links and nice hierarchy formatting
+ *
+ * Copied from: https://pastebin.com/NFMDyXXY
+ * There's talk in the discord of a really niced (colors, tooltips, etc) one in the works
+ * 
+ */
+export async function main(ns) {
+    let n = ["home"];
+    let p = [""];
+    for(let i = 0; i < n.length; i++){
+        let s=ns.scan(n[i]);
+        for(let j = 0; j < s.length; j++) if (!n.includes(s[j])) n.push(s[j]), p.push(n[i]);
+    }
+    let r = ["home"];
+    let targets = n.slice();
+    for(let i = 1; i<targets.length; i++){
+        r.push("");
+        while (targets[i]!="home"){
+            r[i] = "connect " + targets[i] + ";" + r[i];
+            targets[i] = p[n.indexOf(targets[i])];
+        }
+        r[i] = "home;"+r[i];
+    }
+    let output = "";
+    let printWithChildren = function (parent, prefixes){
+        let color = 'red';
+        if (ns.hasRootAccess(parent)) color = 'white';
+        for(let i = 0; i<prefixes.length; i++) output += prefixes[i];
+        output += "<span onClick=\"document.getElementById(\'terminal-input-text-box\').value=\'" + r[n.indexOf(parent)] + "\';document.body.dispatchEvent(new KeyboardEvent(\'keydown\', {bubbles: true, keyCode: 13 }));\" style=\"color:" + color + "\">" + parent + "</span>";
+        for (let i = 0; i < n.length; i++){
+            if(p[i]==parent){
+                let newPrefixes = prefixes.slice();
+                if (newPrefixes[newPrefixes.length-1] == "?>") newPrefixes[newPrefixes.length-1] = "? ";
+                if (newPrefixes[newPrefixes.length-1] == "?>") newPrefixes[newPrefixes.length-1] = "  ";
+                newPrefixes.push("?>");
+                for (let j = i+1; j<n.length; j++) if (p[j]==p[i]) newPrefixes[newPrefixes.length-1] = "?>";
+                printWithChildren(n[i], newPrefixes)
+            }
+        }
+    }
+    printWithChildren(n[0],["\n"]);
+    ns.tprint(output);
+}

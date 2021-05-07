@@ -200,14 +200,21 @@ export async function main(ns) {
     consumeSignal(ns);
 
     while (true) {
+        // TODO: Add code to kill and watch scripts running (that this script would have run)
+
         const servers = getServerList(ns);
         const purchasedServers = ns.getPurchasedServers();
+        const hackingLevel = ns.getHackingLevel();
 
         // Generate the list of servers we want to target with hacks
         const targetServers = servers
             .filter((server) => !purchasedServers.includes(getHostname(server)))
             .filter((server) => !["darkweb", "home"].includes(getHostname(server)))
-            .filter((server) => ns.hasRootAccess(getHostname(server)) === true);
+            .filter((server) => ns.hasRootAccess(getHostname(server)) === true)
+            .filter((server) => ns.getServerRequiredHackingLevel(getHostname(server)) <= hackingLevel);
+        // TODO: Add [getServerRequiredHackingLevel] to server functions
+        // TODO: Add watcher on <next hacking level that makes a new server available>
+
         ns.tprint("Target Servers = " + targetServers.map((server) => getHostname(server)).join(", "));
 
         // Generate the list of servers that we will run the hacks from
