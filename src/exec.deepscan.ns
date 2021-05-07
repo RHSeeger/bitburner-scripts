@@ -5,7 +5,7 @@
  *
  * Copied from: https://pastebin.com/NFMDyXXY
  * There's talk in the discord of a really niced (colors, tooltips, etc) one in the works
- * 
+ *
  */
 export async function main(ns) {
     let n = ["home"];

@@ -1,0 +1,55 @@
+/*
+ * Executable: exec.watch-hackable.ns
+ *
+ * Watches the target hosts (JSON list in args[0]) and when any of them are
+ * both
+ * - hackable at our current level AND
+ * - we have root
+ * then signal [exec.hack-dist.ns] to let it know it can use the server
+ */
+
+import {signal} from 'lib.signal.ns';
+
+function hackable(ns, currentHackingLevel, hostname) {
+    if (!ns.serverExists(hostname)) {
+        return false;
+    }
+
+    if (! ns.hasRootAccess(hostname)) {
+        return false;
+    }
+
+    if (ns.getServerRequiredHackingLevel(hostname) > currentHackingLevel) {
+        return false;
+    }
+
+    return true;
+}
+
+export async function main(ns) {
+    const json = ns.args[0];
+    if (!json) {
+        ns.tprint("Usage: exec.watch-hackable.ns [JSON list of hostnames]");
+        return;
+    }
+
+    const targetHostnames = JSON.parse(json);
+    if (!ns.args.length) {
+        ns.tprint("Usage: exec.watch-hackable.ns [JSON list of hostnames]");
+        return;
+    }
+
+    if (!targetHostnames) {
+        ns.tprint("Usage: exec.watch-hackable.ns [JSON list of hostnames]");
+        return;
+    }
+
+    let currentHackingLevel = ns.getHackingLevel();
+
+    while (!targetHostnames.some((hostname) => hackable(ns, currentHackingLevel, hostname))) {
+        await ns.sleep(6000);
+    }
+
+    //ns.tprint("Signaling");
+    signal(ns);
+}
