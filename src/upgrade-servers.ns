@@ -1,17 +1,14 @@
 /*
- * Upgrades existing servers to a new (bigger) size and new target
- * Replaces upgrade-servers.script
- *
- * If you do not have the hacking skill to target [target], will display error message and quit
+ * Upgrades existing servers to a new (bigger) size
  *
  * Iterate over each purchased server that matches the naming pattern
  *   If the server is not at least the desired level AND there is enough money, upgrade it
  *   If not upgraded, kill off anything running on it
- *   Deploy script and run it with the maximum number of threads possible
  *
  * If you do not have enough money to upgrade all servers to [size], will do the ones it can and
- *   - if ?block? is true, loop until it can upgrade the rest of the servers. Otherwise
- *   - if ?block? is false, just end running; leaving the remaining servers un-upgraded
+ *   loop until it can upgrade the rest of the servers.
+ *
+ * After each loop where it was able to upgrade at least one server, will signal hack-dist to reconfigure
  *
  * Creates servers with the name pattern: pserv-[size]-[index]
  *   Where:
@@ -20,21 +17,18 @@
  * Recognizes servers with names it created, plus those with the format: pserv-[index]
  *   For servers without the size in the name, it will need to make a call to the server to get it's size
  *
+ * This script uses a [server] structure that is different from that used by [lib.serves.ns]
+ *
  * NOTE: STILL A WORK IN PROGRESS
  *
- * Usage: run upgrade-servers.ns [size] [target] ?block?
+ * Usage: run upgrade-servers.ns [size]
  *     size = log2 the amount of memory desired (1 = 2, 10 = 1024, etc)
- *     target = the named server that should be targeted by the deployed hacking script
- *     block = [true | false] depending on if the script should continue until all servers are upgraded
  */
+
+import {signal} from 'lib.signal.ns';
 
 const SERVER_NAME_PATTERN_WITH_SIZE = /^pserv-(\d+)-(\d+)$/;
 const SERVER_NAME_PATTERN_NO_SIZE = /^pserv-(\d+)$/;
-
-const HACK_SCRIPT_NAME = "targeted-hacking-script.script";
-const MAX_SERVERS = 24;
-
-const IS_TEST_RUN = false;
 
 /*
  * Returns a list of purchased servers that match our naming patterns
@@ -43,39 +37,27 @@ function getServersInfo(ns) {
     var serverNames = ns.getPurchasedServers(); // list of hostname strings
 
     return serverNames
-        .filter((hostname) => hostname !== "pserv-24") // we use this for something else
         .map((hostname) => {
-        if (SERVER_NAME_PATTERN_WITH_SIZE.test(hostname)) {
-            const matches = hostname.match(SERVER_NAME_PATTERN_WITH_SIZE);
-            return {
-                'name': hostname,
-                'size': matches[1],
-                'index': matches[2]
+            if (SERVER_NAME_PATTERN_WITH_SIZE.test(hostname)) {
+                const matches = hostname.match(SERVER_NAME_PATTERN_WITH_SIZE);
+                return {
+                    'name': hostname,
+                    'size': matches[1],
+                    'index': matches[2]
+                }
+            } else if (SERVER_NAME_PATTERN_NO_SIZE.test(hostname)) {
+                const matches = hostname.match(SERVER_NAME_PATTERN_NO_SIZE);
+                return {
+                    'name': hostname,
+                    'size': null,
+                    'index': matches[1]
+                }
+            } else {
+                // Dosn't match our patterns, ignore it
+                return null;
             }
-        } else if (SERVER_NAME_PATTERN_NO_SIZE.test(hostname)) {
-            const matches = hostname.match(SERVER_NAME_PATTERN_NO_SIZE);
-            return {
-                'name': hostname,
-                'size': null,
-                'index': matches[1]
-            }
-        } else {
-            // Dosn't match our patterns, ignore it
-            return null;
-        }
-    })
-    .filter((value) => value !== null);
-}
-
-
-function calculateServerName(size, index) {
-    return "pserv-" + size + "-" + index;
-}
-
-function getServerInfoByIndex(ns, servers, index) {
-    return Object.keys(servers)
-        .map((key) => servers[key])
-        .find((serverInfo) => serverInfo['index'] === index.toString());
+        })
+        .filter((value) => value !== null);
 }
 
 function calculateIfNeedsUpgrade(ns, server, desiredSize) {
@@ -100,7 +82,7 @@ function getServerSize(ns, server) {
  * Upgrades the list of servers
  * Returns a list of servers that could not be upgraded (and should be tried again, if blocking)
  */
-function upgradeServers(ns, servers, desiredSize, userMoney, serverPurchaseCost, scriptRam, targetHost) {
+function upgradeServers(ns, servers, desiredSize, userMoney, serverPurchaseCost) {
     let unUpgradedServers = [];
 
     for (var i = 0; i < servers.length; i++) {
@@ -111,23 +93,19 @@ function upgradeServers(ns, servers, desiredSize, userMoney, serverPurchaseCost,
                 if (upgrade(ns, server, desiredSize)) {
                     // upgrade will have changes [server]'s field values to the new instance
                     userMoney -= serverPurchaseCost;
-                    deployScript(ns, server, scriptRam, targetHost);
                 } else {
+                    ns.print("Server [" + server.name + "]: Failed to upgrade");
                     // failed... and the delete can't fail... so we deleted it, but couldn't recreate it
                     // Can we recover from this somehow? Try to create it (without having to delete it) in the next loop?
                     // EVERYTHING will need to understand that it's possible a server was deleted
                     unUpgradedServers.push(server);
                 }
             } else {
-                // unable to upgrade, just replace the script
-                stopScripts(ns, server);
-                deployScript(ns, server, scriptRam, targetHost);
+                ns.print("Server [" + server.name + "]: Unable to upgrade");
                 unUpgradedServers.push(server);
             }
         } else {
-            // no need to upgrade, just replace the script
-            stopScripts(ns, server);
-            deployScript(ns, server, scriptRam, targetHost);
+            ns.print("Server [" + server.name + "]: Does not need to be upgraded");
         }
     };
 
@@ -138,32 +116,6 @@ function getServerRam(ns, server) {
     return Math.pow(2, getServerSize(ns, server));
 }
 
-/*
- * Copies the script to the server, then starts it running
- */
-function deployScript(ns, server, scriptRam, targetHost) {
-    const numThreads = Math.floor(getServerRam(ns, server) / scriptRam);
-
-    if (IS_TEST_RUN) {
-        return;
-    }
-
-    ns.scp(HACK_SCRIPT_NAME, server.name);
-    ns.exec(HACK_SCRIPT_NAME, server.name, numThreads, targetHost);
-}
-
-/*
- * Stops any existing scripts on the server
- */
-function stopScripts(ns, server) {
-    if (IS_TEST_RUN) {
-        return;
-    }
-    ns.print("Killing all programs on [" + server.name + "]");
-    do {
-        ns.killall(server.name);
-    } while (ns.getServerRam(server.name)[1] > 0);
-}
 
 function shouldUpgrade(ns, server, desiredSize) {
     return (getServerSize(ns, server) < desiredSize);
@@ -185,11 +137,6 @@ function upgrade(ns, server, desiredSize) {
     const expectedNewName = 'pserv-' + desiredSize + '-' + server.index;
     const desiredMemory = Math.pow(2, desiredSize);
 
-    if (IS_TEST_RUN === true) {
-        ns.print("TEST: Would have upgraded server: [" + server.name + "/" + server.size + "] -> [???/" + desiredSize + "]");
-        return true;
-    }
-
     if (!isDeleted(server)) {
         stopScripts(ns, server);
         if (!ns.deleteServer(server.name)) {
@@ -207,7 +154,7 @@ function upgrade(ns, server, desiredSize) {
 
     if ( !SERVER_NAME_PATTERN_WITH_SIZE.test(newName)) {
         ns.print("New name for server did not match patter: " + newName);
-        throw("New name for server did not match patter: " + newName);
+        throw("New name for server did not match pattern: " + newName);
     }
 
     ns.print("Upgraded server: [" + server.name + "/" + server.size + "] -> [" + newName + "/" + desiredSize + "]");
@@ -222,44 +169,35 @@ function upgrade(ns, server, desiredSize) {
 
 export async function main(ns) {
     const desiredSize = ns.args[0];
-    const targetHost = ns.args[1];
-    const block = ns.args[2] === "true" ? true : false;
 
-    if (!desiredSize || !targetHost) {
-        ns.tprint("Usage: upgrade-servers.ns [desired size] [target hostname] ?block?")
+    if (!desiredSize) {
+        ns.tprint("Usage: upgrade-servers.ns [desired size] ?block?")
         return;
     }
 
     if (desiredSize < 1 || desiredSize > 20) {
-        ns.tprint("The value of [desired size] must be betweeen 1 and 20, inclusive")
-        return;
-    }
-
-    const targetHackingLevel = ns.getServerRequiredHackingLevel(targetHost);
-    const playerHackingLevel = ns.getHackingLevel();
-    if (targetHackingLevel > playerHackingLevel) {
-        ns.tprint("The desired host (" + targetHost + ")"
-            + " has a hacking level (" + targetHackingLevel + ")"
-            + " higher than yours (" + playerHackingLevel + ") - cannot target");
+        ns.tprint("The value of [desired size] must be from 1 to 20, inclusive")
         return;
     }
 
     const desiredMemory = Math.pow(2, desiredSize);
     const serverPurchaseCost = ns.getPurchasedServerCost(desiredMemory);
     const userMoney = ns.getServerMoneyAvailable("home");
-    const scriptRam = ns.getScriptRam(HACK_SCRIPT_NAME, "home");
 
-    ns.print("Upgrading servers to size " + desiredSize + " (" + desiredMemory.toLocaleString() + " G) @ " + targetHost);
+    ns.print("Upgrading servers to size " + desiredSize + " (" + desiredMemory.toLocaleString());
     var servers = getServersInfo(ns);
     do {
-        servers = upgradeServers(ns, servers, desiredSize, userMoney, serverPurchaseCost, scriptRam, targetHost);
-        if (block) {
-            await ns.sleep(6 * 1000);
+        const startingServerCount = servers.length;
+        servers = upgradeServers(ns, servers, desiredSize, userMoney, serverPurchaseCost);
+
+        if (startingServerCount > servers.length) {
+            // If any servers were upgraded, signal
+            signal(ns);
         }
-    } while (block === true && servers.length > 0);
+
+        await ns.sleep(6 * 1000);
+    } while (servers.length > 0);
 
     ns.print("Done");
-    while (true) {
-        await ns.sleep(6 * 1000);
-    }
 }
+

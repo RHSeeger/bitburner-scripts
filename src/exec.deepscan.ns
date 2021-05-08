@@ -5,14 +5,62 @@
  *
  * Copied from: https://pastebin.com/NFMDyXXY
  * There's talk in the discord of a really niced (colors, tooltips, etc) one in the works
- *
+ *     https://discord.com/channels/415207508303544321/415247422638522395/839987818507927594
  */
+
+const HACK_PROGRAMS = [
+    'BruteSSH.exe',
+    'FTPCrack.exe',
+    'relaySMTP.exe',
+    'HTTPWorm.exe',
+    'SQLInject.exe'
+];
+
+function getAvailablePortHacks(ns) {
+    var portHacks = 0;
+
+    var keys = Object.keys(HACK_PROGRAMS);
+    for (var i = 0; i < keys.length; ++i) {
+        var filename = keys[i];
+        if (ns.fileExists(filename, 'home')) {
+            portHacks += 1;
+        }
+    }
+
+    return portHacks;
+}
+
+function getColor(ns, hostname, hackingLevel, numAvailablePortHacks) {
+    let canHack = ns.getServerRequiredHackingLevel(hostname) <= hackingLevel;
+    let hasRoot = ns.hasRootAccess(hostname);
+    let canPort = ns.getServerNumPortsRequired(hostname) <= numAvailablePortHacks;
+
+    if (hasRoot && canHack) {
+        // Available to hack
+        return 'green';
+    }
+    if (canPort && canHack) {
+        // Could hack if ports were opened and nuked
+        return 'blue';
+    }
+    // Not enough port hacks OR not enough hacking skill
+    return 'red';
+}
+
 export async function main(ns) {
+    const hackingLevel = ns.getHackingLevel();
+    const numAvailablePortHacks = getAvailablePortHacks(ns);
+
     let n = ["home"];
     let p = [""];
-    for(let i = 0; i < n.length; i++){
+    for (let i = 0; i < n.length; i++){
         let s=ns.scan(n[i]);
-        for(let j = 0; j < s.length; j++) if (!n.includes(s[j])) n.push(s[j]), p.push(n[i]);
+        for (let j = 0; j < s.length; j++) {
+            if (!n.includes(s[j])) {
+                n.push(s[j]);
+                p.push(n[i]);
+            }
+        }
     }
     let r = ["home"];
     let targets = n.slice();
@@ -25,18 +73,30 @@ export async function main(ns) {
         r[i] = "home;"+r[i];
     }
     let output = "";
+
+
     let printWithChildren = function (parent, prefixes){
-        let color = 'red';
-        if (ns.hasRootAccess(parent)) color = 'white';
-        for(let i = 0; i<prefixes.length; i++) output += prefixes[i];
-        output += "<span onClick=\"document.getElementById(\'terminal-input-text-box\').value=\'" + r[n.indexOf(parent)] + "\';document.body.dispatchEvent(new KeyboardEvent(\'keydown\', {bubbles: true, keyCode: 13 }));\" style=\"color:" + color + "\">" + parent + "</span>";
-        for (let i = 0; i < n.length; i++){
-            if(p[i]==parent){
+        let color = getColor(ns, parent, hackingLevel, numAvailablePortHacks)
+        for (let i = 0; i<prefixes.length; i++) {
+            output += prefixes[i];
+        }
+
+        const onClick = "document.getElementById(\'terminal-input-text-box\').value=\'" + r[n.indexOf(parent)] + "\';document.body.dispatchEvent(new KeyboardEvent(\'keydown\', {bubbles: true, keyCode: 13 }));";
+        output += "<span onClick=\"" + onClick + "\" style=\"color:" + color + "\">" + parent + "</span>";
+
+        for (let i = 0; i < n.length; i++) {
+            if (p[i] == parent) {
                 let newPrefixes = prefixes.slice();
-                if (newPrefixes[newPrefixes.length-1] == "?>") newPrefixes[newPrefixes.length-1] = "? ";
-                if (newPrefixes[newPrefixes.length-1] == "?>") newPrefixes[newPrefixes.length-1] = "  ";
+                if (newPrefixes[newPrefixes.length-1] == "?>") {
+                    newPrefixes[newPrefixes.length-1] = "? ";
+                }
+                if (newPrefixes[newPrefixes.length-1] == "?>") {
+                    newPrefixes[newPrefixes.length-1] = "  ";
+                }
                 newPrefixes.push("?>");
-                for (let j = i+1; j<n.length; j++) if (p[j]==p[i]) newPrefixes[newPrefixes.length-1] = "?>";
+                for (let j = i+1; j<n.length; j++) if (p[j]==p[i]) {
+                    newPrefixes[newPrefixes.length-1] = "?>";
+                }
                 printWithChildren(n[i], newPrefixes)
             }
         }
