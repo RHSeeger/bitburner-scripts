@@ -130,6 +130,16 @@ function isDeleted(server) {
 }
 
 /*
+ * Stops any existing scripts on the server
+ */
+function stopScripts(ns, server) {
+    ns.print("Killing all programs on [" + server.name + "]");
+    do {
+        ns.killall(server.name);
+    } while (ns.getServerRam(server.name)[1] > 0);
+}
+
+/*
  * Upgrades the server to the desired size
  * Returns true if successful (or the server was already the desired size), false otherwise
  */

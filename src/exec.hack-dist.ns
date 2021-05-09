@@ -38,7 +38,7 @@ const TAG_WEAKENING = "weakening";
 const HOME_RESERVED_MEMORY = 100;
 const HOME_RESERVED_FRACTION = 0.10;
 
-function resetScripts(ns, server) {
+async function resetScripts(ns, server) {
     SCRIPTS_TO_COPY.forEach((scriptName) => {
         if (!ns.fileExists(scriptName, 'home')) {
             ns.tprint("Script not found: " + scriptName);
@@ -46,8 +46,12 @@ function resetScripts(ns, server) {
     });
 
     const hostname = getHostname(server);
-    ns.scriptKill(SCRIPT_FLEXIHACK, hostname);
-    ns.scriptKill(SCRIPT_WEAKEN, hostname);
+    while (ns.scriptKill(SCRIPT_FLEXIHACK, hostname)) {
+        await ns.sleep(100);
+    }
+    while (ns.scriptKill(SCRIPT_WEAKEN, hostname)) {
+        await ns.sleep(100);
+    }
     if (hostname !== "home") {
         do {
             ns.killall(hostname);
@@ -55,6 +59,7 @@ function resetScripts(ns, server) {
         ns.scp(SCRIPTS_TO_COPY, "home", hostname);
     }
 }
+
 
 /*
  * Pretty much the same as servers.getMemoryAvailable, but reserves some amount to not being
@@ -67,6 +72,7 @@ function getMemoryUsable(ns, server) {
         let reserved = Math.max(HOME_RESERVED_MEMORY, HOME_RESERVED_FRACTION * totalMemory);
         memory -= reserved;
     }
+
     return memory;
 }
 
@@ -95,11 +101,12 @@ function scheduleOn(ns, attackServers, jobScript, numberToRun, targetHostname, t
         numberToRun -= threadsOnThisHost;
         if (threadsOnThisHost > 0) {
             let argList = [jobScript, attackerHostname, threadsOnThisHost, targetHostname, tag];
-            //ns.tprint("execute: " + argList);
+            ns.tprint("execute: " + argList);
             if (execa(ns, argList)) {
                 useMemory(ns, server, (threadsOnThisHost * ramPerTask));
             } else {
                 ns.tprint("Unable to run: " + JSON.stringify(argList));
+                exit();
             }
         }
 
@@ -125,6 +132,7 @@ async function doHacks(ns, targetServers, attackServers) {
     // have weakened the biggest server we can hack. At that point, we dedicate
     // all excess capacity to hacking said server, which gets lucrative fast.
     let weakenTargets = targetServers.slice(0, targetServers.length);
+    let loop = 0;
     while (weakenTargets.length > 0 && attackServers.length > 0) {
         const target = weakenTargets.shift();
         const targetHostname = getHostname(target);
@@ -135,16 +143,17 @@ async function doHacks(ns, targetServers, attackServers) {
         if (ns.getServerSecurityLevel(targetHostname) <= (3 + minSecurityLevel)) {
             //ns.tprint("already weakened: " + targetHostname);
             // Just spawn one weaken and a round of flexihacks. This is to make early game cashflow less painful.
-            attackServers = scheduleOn(ns, attackServers, SCRIPT_WEAKEN, 1, targetHostname, TAG_HACKING);
-            attackServers = scheduleOn(ns, attackServers, SCRIPT_FLEXIHACK, 6, targetHostname, TAG_HACKING);
+            attackServers = scheduleOn(ns, attackServers, SCRIPT_WEAKEN, 1, targetHostname, TAG_WEAKENING + "/" + loop);
+            attackServers = scheduleOn(ns, attackServers, SCRIPT_FLEXIHACK, 6, targetHostname, TAG_WEAKENING + "/" + loop);
         } else {
             // Spawn only weakens until security is near minimum.
             let numberOfWeakens = Math.floor((ns.getServerSecurityLevel(targetHostname) - ns.getServerMinSecurityLevel(targetHostname)) / 0.05);
             //ns.tprint("needs " + numberOfWeakens + " weaken threads");
-            attackServers = scheduleOn(ns, attackServers, SCRIPT_WEAKEN, numberOfWeakens, targetHostname, TAG_WEAKENING);
+            attackServers = scheduleOn(ns, attackServers, SCRIPT_WEAKEN, numberOfWeakens, targetHostname, TAG_WEAKENING + "/" + loop);
             watchSecurity(ns, targetHostname, minSecurityLevel);
         }
 
+        loop += 1;
         await ns.sleep(10); // to give the ui a chance to update
     }
 
@@ -278,8 +287,11 @@ export async function main(ns) {
         ns.tprint("Identified Servers: " + currentlyHackable.length + " targets, " + attackServers.length + " attackers");
         // Cancel all running weakens and flexihacks on hosts, and record
         // their available RAM.
-        attackServers.forEach((server) => resetScripts(ns, server));
-        await ns.sleep(1000);
+        for (let i=0; i<servers.length; i++) {
+            await resetScripts(ns, servers[i]);
+        }
+
+        await ns.sleep(100);
 
         killWatchScripts(ns);
         await ns.sleep(100);
