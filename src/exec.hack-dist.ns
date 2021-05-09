@@ -34,7 +34,9 @@ const SCRIPTS_TO_COPY = [
 const TAG_HACKING = "hacking";
 const TAG_WEAKENING = "weakening";
 
+// 10% of the home server's memory, with a minimum of 100g, is reserved to not be used by this script
 const HOME_RESERVED_MEMORY = 100;
+const HOME_RESERVED_FRACTION = 0.10;
 
 function resetScripts(ns, server) {
     SCRIPTS_TO_COPY.forEach((scriptName) => {
@@ -55,6 +57,20 @@ function resetScripts(ns, server) {
 }
 
 /*
+ * Pretty much the same as servers.getMemoryAvailable, but reserves some amount to not being
+ * used on [home]
+ */
+function getMemoryUsable(ns, server) {
+    let memory = getMemoryAvailable(ns, server);
+    if (getHostname(server) === 'home') {
+        let totalMemory = getMemoryTotal(ns, server);
+        let reserved = Math.max(HOME_RESERVED_MEMORY, HOME_RESERVED_FRACTION * totalMemory);
+        memory -= reserved;
+    }
+    return memory;
+}
+
+/*
  * Runs [numberToRun] threads of [jobScript] on [servers] targeting [targetHostname]
  *
  * Tag is an unused argument to differentiate different instances of the same script.
@@ -68,7 +84,7 @@ function scheduleOn(ns, attackServers, jobScript, numberToRun, targetHostname, t
     while (numberToRun > 0 && attackServers.length > 0) {
         const server = attackServers[0];
         const attackerHostname = getHostname(server);
-        const memoryAvailable = getMemoryAvailable(ns, server);
+        const memoryAvailable = getMemoryUsable(ns, server);
         //ns.tprint("Memory available on [" + attackerHostname + "]: " + memoryAvailable);
 
         // Schedule as many threads of the task as possible on the first host.
@@ -165,7 +181,7 @@ async function doHacks(ns, targetServers, attackServers) {
             // Then use half of them, down to a minimum of 1 and 6
             // Should make this a maximum of log2(threads) loops
             const totalThreads = attackServers
-                .map((server) => getMemoryAvailable(ns, server))
+                .map((server) => getMemoryUsable(ns, server))
                 .map((availableMemory) => Math.floor(availableMemory / (scriptSizeFlexi + scriptSizeWeaken)))
                 .reduce((accumulator, currentValue) => accumulator + currentValue);
 
@@ -256,7 +272,7 @@ export async function main(ns) {
         // TODO: Figure out how to add home later
         let attackServers = servers
             .filter((server) => ns.hasRootAccess(getHostname(server)))
-            .filter((server) => !["darkweb", "home"].includes(getHostname(server)));
+            .filter((server) => !["darkweb" /*, "home" */].includes(getHostname(server)));
         ns.print("Attack Servers = " + attackServers.map((server) => getHostname(server)).join(", "));
 
         ns.tprint("Identified Servers: " + currentlyHackable.length + " targets, " + attackServers.length + " attackers");
