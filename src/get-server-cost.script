@@ -1,4 +1,4 @@
 
 var size = Math.pow(2, args[0]);
 var cost = getPurchasedServerCost(size);
-tprint("Server Size [" + size + "] cost [" + cost + "]");
+tprint("Server Size [" + size + "] cost [" + cost + "], * 25 servers = " + (25*cost).toLocaleString());

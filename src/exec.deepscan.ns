@@ -1,106 +1,101 @@
 /*
- * Executeable: exec.deepscan.ns
+ * Executable exec.deepscan.ns
+ *
+ * Copied from: https://pastebin.com/M00hK3Rm
  *
  * prints the entire tree starting from home, with clickable links and nice hierarchy formatting
- *
- * Copied from: https://pastebin.com/NFMDyXXY
- * There's talk in the discord of a really niced (colors, tooltips, etc) one in the works
- *     https://discord.com/channels/415207508303544321/415247422638522395/839987818507927594
  */
 
-const HACK_PROGRAMS = [
-    'BruteSSH.exe',
-    'FTPCrack.exe',
-    'relaySMTP.exe',
-    'HTTPWorm.exe',
-    'SQLInject.exe'
-];
-
-function getAvailablePortHacks(ns) {
-    var portHacks = 0;
-
-    var keys = Object.keys(HACK_PROGRAMS);
-    for (var i = 0; i < keys.length; ++i) {
-        var filename = keys[i];
-        if (ns.fileExists(filename, 'home')) {
-            portHacks += 1;
-        }
-    }
-
-    return portHacks;
-}
-
-function getColor(ns, hostname, hackingLevel, numAvailablePortHacks) {
-    let canHack = ns.getServerRequiredHackingLevel(hostname) <= hackingLevel;
-    let hasRoot = ns.hasRootAccess(hostname);
-    let canPort = ns.getServerNumPortsRequired(hostname) <= numAvailablePortHacks;
-
-    if (hasRoot && canHack) {
-        // Available to hack
-        return 'green';
-    }
-    if (canPort && canHack) {
-        // Could hack if ports were opened and nuked
-        return 'blue';
-    }
-    // Not enough port hacks OR not enough hacking skill
-    return 'red';
-}
-
+//run deepestScan.ns
+//prints the entire tree starting from home, with clickable links and nice hierarchy formatting
 export async function main(ns) {
-    const hackingLevel = ns.getHackingLevel();
-    const numAvailablePortHacks = getAvailablePortHacks(ns);
+    let configColors = ["White",	//Player-owned servers
+            "DeepPink",	//Rooted faction server
+            "Purple",	//Faction server
+            "Lime",		//Rooted server
+            "Green",	//Unrooted server
+            "White"],	//Tree hierarchy piping
+        configShowPip = true,		//Whether to show the lime/red rooted pip next to servers
+        configShowCC = true,		//Whether to show an indicator for coding contracts.
 
-    let n = ["home"];
-    let p = [""];
-    for (let i = 0; i < n.length; i++){
-        let s=ns.scan(n[i]);
-        for (let j = 0; j < s.length; j++) {
-            if (!n.includes(s[j])) {
-                n.push(s[j]);
-                p.push(n[i]);
+        servers = ["home"],			//Main server array
+        parents = [""],				//Array of server-parents
+        routes = ["home;"];			//Array of routing strings to reach each server
+
+    //Populate "servers" and "parents" arrays
+    for(let i = 0; i < servers.length; i++){
+        let scanned=ns.scan(servers[i]);
+        for(let j = 0; j < scanned.length; j++){
+            if (!servers.includes(scanned[j])){
+                servers.push(scanned[j]);
+                parents.push(servers[i]);
             }
         }
     }
-    let r = ["home"];
-    let targets = n.slice();
-    for(let i = 1; i<targets.length; i++){
-        r.push("");
-        while (targets[i]!="home"){
-            r[i] = "connect " + targets[i] + ";" + r[i];
-            targets[i] = p[n.indexOf(targets[i])];
+
+    //Populate routes text to connect to each server
+    for(let i = 1; i<servers.length; i++){
+        let routingTarget = servers[i];
+        routes.push("");
+        while (routingTarget!="home"){
+            routes[i] = "connect " + routingTarget + ";" + routes[i];
+            routingTarget = parents[servers.indexOf(routingTarget)];
         }
-        r[i] = "home;"+r[i];
+        routes[i] = "home;"+routes[i];
     }
-    let output = "";
 
+    //Function to get the correct server color based on configuration
+    let getServerColor = function(server){
+        let root = ns.hasRootAccess(server),
+            factionServers = ["CSEC", "avmnite-02h", "I.I.I.I", "run4theh111z", "w0r1d_d43m0n"];
 
+        if (ns.getPurchasedServers().includes(server) || server == "home" || server.includes("hacknet")) return configColors[0];
+        if (factionServers.includes(server) && root) return configColors[1];
+        if (factionServers.includes(server)) return configColors[2];
+        if (root) return configColors[3];
+        return configColors[4];
+    };
+
+    //Function to create HTML output for server name, including click-to-connect and tooltip
+    let getFormattedServerName = function(server){
+        let root = ns.hasRootAccess(server),
+            hLevel = ns.getServerRequiredHackingLevel(server),
+            security = [ns.getServerSecurityLevel(server), Math.round(ns.getServerMinSecurityLevel(server)*100)/100],
+            money = [ns.getServerMoneyAvailable(server), ns.getServerMaxMoney(server)],
+            growth = ns.getServerGrowth(server),
+            hasCC = (ns.ls(server,".cct").length>0);
+
+        return `<span style="color: ${(root) ? "lime" : "red"}; display: ${(configShowPip) ? "inline" : "none"}">?</span>`+
+            `<span class="tooltip"><a class="scan-analyze-link"`+
+            `onClick="document.getElementById('terminal-input-text-box').value='${routes[servers.indexOf(server)]}';`+
+            `document.body.dispatchEvent(new KeyboardEvent('keydown', {bubbles: true, keyCode: 13}));"`+
+            `style="color: ${getServerColor(server)}">${server}`+
+            `<span class="tooltiptext"><strong>${server}</strong>\n`+
+            `Rooted: <span style="color:${(root) ? "Lime" : "Red"}">${root}</span>\n`+
+            `Hack Level Req: ${hLevel}\n`+
+            `Money: ${ns.nFormat(money[0], '$0.000a')} / ${ns.nFormat(money[1], '$0.000a')}\n`+
+            `Security: ${security[0]} / Min ${security[1]}\n`+
+            `Growth: ${growth}</span></a></span>`+
+            `<span style="color: ${(root) ? "Cyan" : "DarkCyan"}; display: ${(configShowCC && hasCC) ? "inline" : "none"}">?</span>`;
+    };
+
+    //Function to create hierarchy display
     let printWithChildren = function (parent, prefixes){
-        let color = getColor(ns, parent, hackingLevel, numAvailablePortHacks)
-        for (let i = 0; i<prefixes.length; i++) {
-            output += prefixes[i];
-        }
-
-        const onClick = "document.getElementById(\'terminal-input-text-box\').value=\'" + r[n.indexOf(parent)] + "\';document.body.dispatchEvent(new KeyboardEvent(\'keydown\', {bubbles: true, keyCode: 13 }));";
-        output += "<span onClick=\"" + onClick + "\" style=\"color:" + color + "\">" + parent + "</span>";
-
-        for (let i = 0; i < n.length; i++) {
-            if (p[i] == parent) {
+        let output = "";
+        for(let i = 0; i<prefixes.length; i++) output += prefixes[i];
+        output += getFormattedServerName(parent);
+        for (let i = 0; i < servers.length; i++){
+            if(parents[i]==parent){
                 let newPrefixes = prefixes.slice();
-                if (newPrefixes[newPrefixes.length-1] == "?>") {
-                    newPrefixes[newPrefixes.length-1] = "? ";
-                }
-                if (newPrefixes[newPrefixes.length-1] == "?>") {
-                    newPrefixes[newPrefixes.length-1] = "  ";
-                }
+                if (newPrefixes[newPrefixes.length-1] == "?>") newPrefixes[newPrefixes.length-1] = "? ";
+                if (newPrefixes[newPrefixes.length-1] == "?>") newPrefixes[newPrefixes.length-1] = "  ";
                 newPrefixes.push("?>");
-                for (let j = i+1; j<n.length; j++) if (p[j]==p[i]) {
-                    newPrefixes[newPrefixes.length-1] = "?>";
-                }
-                printWithChildren(n[i], newPrefixes)
+                for (let j = i+1; j<servers.length; j++) if (parents[j]==parents[i]) newPrefixes[newPrefixes.length-1] = "?>";
+                output += printWithChildren(servers[i], newPrefixes);
             }
         }
-    }
-    printWithChildren(n[0],["\n"]);
-    ns.tprint(output);
+        return output;
+    };
+
+    ns.tprint(`<span style="color: ${configColors[5]}"> ${printWithChildren(servers[0],["\n"])}</span>`);
 }
