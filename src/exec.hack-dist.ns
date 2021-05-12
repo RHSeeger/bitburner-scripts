@@ -141,7 +141,10 @@ async function doHacksWeakens(ns, targetServers, attackServers) {
         // ns.tprint("weakenloop: " + targetHostname);
 
         let minSecurityLevel = ns.getServerMinSecurityLevel(targetHostname); // convert this to servers function
-        if (ns.getServerSecurityLevel(targetHostname) <= (3 + minSecurityLevel)) {
+        // TODO: Need better logic here. "3" was causing restarts too often, but 50% could be way off
+        let targetSecurityLevel = (minSecurityLevel + ns.getServerMaxSecurityLevel(targetHostname)) / 2;
+        //if (ns.getServerSecurityLevel(targetHostname) <= (3 + minSecurityLevel)) {
+        if (ns.getServerSecurityLevel(targetHostname) <= targetSecurityLevel) {
             //ns.tprint("already weakened: " + targetHostname);
             // Just spawn one weaken and a round of flexihacks. This is to make early game cashflow less painful.
             attackServers = scheduleOn(ns, attackServers, SCRIPT_WEAKEN, 1, targetHostname, TAG_WEAKENING + "/" + loop);
@@ -196,105 +199,6 @@ async function doHacksFlexi(ns, targetServers, attackServers) {
 async function doHacks(ns, targetServers, attackServers) {
     doHacksWeakens(ns, targetServers, attackServers);
     doHacksFlexi(ns, targetServers, attackServers);
-
-    //let weakenTargets = targetServers.slice(0, targetServers.length);
-    //let loop = 0;
-    //while (weakenTargets.length > 0 && attackServers.length > 0) {
-    //    const target = weakenTargets.shift();
-    //    const targetHostname = getHostname(target);
-    //
-    //    // ns.tprint("weakenloop: " + targetHostname);
-    //
-    //    let minSecurityLevel = ns.getServerMinSecurityLevel(targetHostname); // convert this to servers function
-    //    if (ns.getServerSecurityLevel(targetHostname) <= (3 + minSecurityLevel)) {
-    //        //ns.tprint("already weakened: " + targetHostname);
-    //        // Just spawn one weaken and a round of flexihacks. This is to make early game cashflow less painful.
-    //        attackServers = scheduleOn(ns, attackServers, SCRIPT_WEAKEN, 1, targetHostname, TAG_WEAKENING + "/" + loop);
-    //        attackServers = scheduleOn(ns, attackServers, SCRIPT_FLEXIHACK, 6, targetHostname, TAG_WEAKENING + "/" + loop);
-    //    } else {
-    //        // Spawn only weakens until security is near minimum.
-    //        let numberOfWeakens = Math.floor((ns.getServerSecurityLevel(targetHostname) - ns.getServerMinSecurityLevel(targetHostname)) / 0.05);
-    //        //ns.tprint("needs " + numberOfWeakens + " weaken threads");
-    //        attackServers = scheduleOn(ns, attackServers, SCRIPT_WEAKEN, numberOfWeakens, targetHostname, TAG_WEAKENING + "/" + loop);
-    //        watchSecurity(ns, targetHostname, minSecurityLevel);
-    //    }
-    //
-    //    loop += 1;
-    //    await ns.sleep(10); // to give the ui a chance to update
-    //}
-    //
-    //ns.print("Hacks Run - Target Servers Left: " + weakenTargets.map((server) => getHostname(server)).join(", "));
-    //ns.print("Hacks Run - Attack Servers Left: " + attackServers.map((server) => getHostname(server)).join(", "));
-    //
-    //// If there are any resources left, it's time to hack! We will schedule up to ~100
-    //// hack workers targetting a given server. Generally speaking we want to target
-    //// servers that are deeper in the search tree. These will tend to appear at the end
-    //// of the target list.
-    //// TODO: This is not right... we want to attack ALL servers. This only attacks one
-    ////       Assign (totalStartingThreads / numTargets) to each target? (not optimal, but better
-    //const scriptSizeWeaken = ns.getScriptRam(SCRIPT_WEAKEN, "home");
-    //const scriptSizeFlexi = ns.getScriptRam(SCRIPT_FLEXIHACK, "home");
-    //const batchMemoryRequired = scriptSizeWeaken + (6 * scriptSizeFlexi);
-    //const totalMemoryAvailable = attackServers
-    //    .map((server) => getMemoryUsable(ns, server))
-    //    .reduce((accumulator, currentValue) => accumulator + currentValue);
-    //// Calculate the number of batches (1 weaken + 6 flexi) to run on against each target
-    //// We round up because we'd rather have more batches on the earlier hosts and run out on the later/lower hosts
-    //const numBatchesPerTarget = Math.ceil(totalMemoryAvailable / batchMemoryRequired);
-    //
-    //ns.tprint("Starting flexihack loops against " + targetServers.length + " targets");
-    //for (let i = 0; i < targetServers.length; i++) {
-    //    const targetHostname = getHostname(targetServers[i]);
-    //    ns.tprint("Flexihack loop [" + targetHostname + "] with " + numBatchesPerTarget + " batches using " + attackServers.length + " attackers");
-    //
-    //    // Add the "rounds" to the tag so that the system considers them "different" scripts
-    //    attackServers = scheduleOn(ns, attackServers, SCRIPT_WEAKEN, numBatchesPerTarget, targetHostname, TAG_HACKING + "/" + i);
-    //    attackServers = scheduleOn(ns, attackServers, SCRIPT_FLEXIHACK, numBatchesPerTarget * 6, targetHostname, TAG_HACKING + "/" + i);
-    //
-    //    await ns.sleep(10); // to give the ui a chance to update
-    //}
-
-    //while (targetServers.length > 0 && attackServers.length > 0) {
-    //    let target = targetServers.pop();
-    //    let targetHostname = getHostname(target);
-    //    ns.print("flexihack loop " + targetHostname + " with " + attackServers.length + " attack servers");
-    //
-    //    // We stagger the scheduling of flexihacks so that not all hundred threads
-    //    // are hacking or growing at the same time. We believe this will reduce waste.
-    //    // We are also staggering the scheduling of weakens, which seems like a waste.
-    //    // We can probably make a reasonable guess as to how many will actually be used.
-    //    //
-    //    // Rule of thumb: one weaken per six flexihacks. Derivation: hack takes
-    //    // 0.002 security, grow takes 2.5x as long at takes 0.005. Weaken takes ~3.5x
-    //    // and 0.05. Divide the rates through and it seems like no matter whether you're
-    //    // doing grow or hack, you're using about 1/6th as much security per unit time (
-    //    // not accounting for failed hacks).
-    //    // for (let i = 0; attackServers.length > 0 && i < 15; ++i) { // TODO: why 15?
-    //
-    //    const scriptSizeWeaken = ns.getScriptRam(SCRIPT_WEAKEN, "home");
-    //    const scriptSizeFlexi = ns.getScriptRam(SCRIPT_FLEXIHACK, "home");
-    //
-    //    let rounds = 0;
-    //    for (; attackServers.length > 0 && rounds < 150; rounds++) { // Should never go over 150, but lets play it safe
-    //        // Determine the total amount of threads available across all server
-    //        // Then use half of them, down to a minimum of 1 and 6
-    //        // Should make this a maximum of log2(threads) loops
-    //        const totalThreads = attackServers
-    //            .map((server) => getMemoryUsable(ns, server))
-    //            .map((availableMemory) => Math.floor(availableMemory / (scriptSizeFlexi + scriptSizeWeaken)))
-    //            .reduce((accumulator, currentValue) => accumulator + currentValue);
-    //
-    //        ns.print("scheduling flexihack round " + rounds + " with " + totalThreads + " total threads");
-    //        const weakenThreads = Math.max(1, Math.floor((totalThreads / 7.0) * 1));
-    //        const flexiThreads = Math.max(6, Math.floor((totalThreads / 7.0) * 6));
-    //        // Add the "rounds" to the tag so that the system considers them "different" scripts
-    //        attackServers = scheduleOn(ns, attackServers, SCRIPT_WEAKEN, weakenThreads, targetHostname, TAG_HACKING + "/" + rounds);
-    //        attackServers = scheduleOn(ns, attackServers, SCRIPT_FLEXIHACK, flexiThreads, targetHostname, TAG_HACKING + "/" + rounds);
-    //
-    //        await ns.sleep(10); // to give the ui a chance to update
-    //    }
-    //    ns.print("scheduled flexihack rounds total " + rounds);
-    //}
 }
 
 function getTargetServers(ns) {
@@ -323,7 +227,7 @@ function killWatchScripts(ns) {
  * If not, we are probably under-buying local ram.
  */
 function watchSecurity(ns, targetHostname, minSecurityLevel) {
-    if (!ns.run(SCRIPT_WATCH_SECURITY, 1, targetHostname, (3 + minSecurityLevel))) {
+    if (!ns.run(SCRIPT_WATCH_SECURITY, 1, targetHostname, minSecurityLevel)) {
         ns.tprint("Unable to run [" + SCRIPT_WATCH_SECURITY + "] on [" + targetHostname + "]");
     }
 }

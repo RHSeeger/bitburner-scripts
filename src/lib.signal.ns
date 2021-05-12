@@ -7,8 +7,8 @@
 const SIGNAL_FILENAME = "hack-dist_notification.txt";
 const TOUCH_SCRIPT = "exec.touch.ns";
 
-export function signal(ns) {
-    ns.tprint("notifying hack-dist.script of a rescheduling condition");
+export function signal(ns, message) {
+    ns.tprint("notifying hack-dist.script of a rescheduling condition" + (!message ? "" : (" : " + message)));
     ns.exec(TOUCH_SCRIPT, "home", 1, SIGNAL_FILENAME);
 }
 
