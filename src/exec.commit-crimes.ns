@@ -1,0 +1,51 @@
+/*
+ * Commits crimes if not doing anything else
+ */
+
+const CRIMES_TO_DO = [
+    "shoplift",
+    "rob store",
+    "mug",
+    "larceny",
+    "deal drugs",
+    "bond forgery",
+    "traffick arms",
+    "homicide",
+    "grand theft auto",
+    "kidnap",
+    "assassinate",
+    "heist"
+];
+
+export async function main(ns) {
+    //CRIMES_TO_DO.forEach((crime) => {
+    //    ns.tprint("Crime chance: " + crime + " = " + ns.getCrimeChance(crime)) + " * " + ns.getCrimeStats(crime);
+    //});
+
+    while (true) {
+        if (!ns.isBusy()) {
+            const bestCrime = CRIMES_TO_DO.sort((a, b) => {
+                const statsA = ns.getCrimeStats(a);
+                const statsB = ns.getCrimeStats(b);
+                return (ns.getCrimeChance(b) * statsB.money / statsB.time) - (ns.getCrimeChance(a) * statsA.money / statsA.time)
+            })[0];
+            ns.print("Best crime: " + bestCrime);
+            ns.commitCrime(bestCrime);
+        }
+
+        await ns.sleep(10000);
+    }
+}
+
+/*
+ So sleep for like 75% of the duratino of the crime first
+ when you wake up from that check if you're still busy
+ If you are then the human player didn't cancel and you should do it again.
+ If you did cancel then quit.
+
+Will need to check (at the 75% mark) to see if the player is still doing the crime that was scheduled
+Since the user could have canceled the crime and started some other busy work
+Can use getPlayer for that.
+
+
+ */

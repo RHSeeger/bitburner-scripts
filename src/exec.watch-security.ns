@@ -16,8 +16,14 @@ export async function main(ns) {
     }
 
     while (ns.getServerSecurityLevel(target) > securityLevelGoal) {
+        if (target === "foodnstuff") {
+            ns.tprint("Waiting for security [" + securityLevelGoal + "] on [" + target + "], current [" + ns.getServerSecurityLevel(target) + "]");
+        }
         await ns.sleep(6000);
     }
 
-    signal(ns);
+    if (target === "foodnstuff") {
+        ns.tprint("Waited for security [" + securityLevelGoal + "] on [" + target + "], current [" + ns.getServerSecurityLevel(target) + "]");
+    }
+    signal(ns, target + ":" + securityLevelGoal);
 }

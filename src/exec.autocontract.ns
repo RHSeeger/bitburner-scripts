@@ -5,6 +5,81 @@
  *     autocontract.ns v20190515 by /u/hyperpandiculation
  */
 
+async function solverParens(ns, arrayData) {
+    const isParenthesis = function(c) {
+        return ((c === '(') || (c === ')'));
+    }
+
+    //  method returns true if string contains valid parenthesis
+    const isValidString = function(str) {
+        let cnt = 0;
+        for (let i = 0; i < str.length; i++) {
+            if (str[i] === '(') {
+                cnt++;
+            } else if (str[i] === ')') {
+                cnt--;
+            }
+            if (cnt < 0) {
+                return false;
+            }
+        }
+        return (cnt === 0);
+    }
+
+    //  method to remove invalid parenthesis
+    const removeInvalidParenthesis = function(str) {
+        ns.print("Removing invalid parens from: " + str);
+
+        if (str.length === 0) {
+            ns.print("Empty string");
+            return;
+        }
+
+        let temp = null;
+        let level = false;
+
+        let q = [ str ]; //  queue to maintain BFS
+        let visit = [ str ]; //  visit [set] to ignore already visited string
+        let validStrings = [];
+
+        while (q.length > 0) {
+            str = q.shift();
+
+            if (isValidString(str)) {
+                ns.print("Looking at string: " + str + " - valid");
+                validStrings.push(str);
+
+                // If answer is found, make level true so that valid string of only that level are processed.
+                level = true;
+            } else {
+                ns.print("Looking at string: " + str + " - invalid");
+            }
+
+            if (level) {
+                continue;
+            }
+
+            for (let i = 0; i < str.length; i++) {
+                if (!isParenthesis(str[i])) {
+                    continue;
+                }
+
+                // Removing parenthesis from str and pushing into queue,if not visited already
+                temp = str.substring(0, i) + str.substring(i + 1);
+                if (!visit.includes(temp)) {
+                    q.push(temp);
+                    visit.push(temp);
+                }
+            }
+        }
+
+        return validStrings;
+    }
+
+    ns.print("Parens Array Data: " + arrayData);
+    return removeInvalidParenthesis(arrayData);
+}
+
 async function solverArrayJumpingGame(ns, arrayData) {
     await ns.sleep(1000);
     ns.tprint("solverArrayJumpingGame()");
@@ -638,6 +713,20 @@ export async function main(ns) {
                     break;
                 case "Unique Paths in a Grid II":
                     outputData = await solverUniquePathsII(ns, inputData);
+                    outputResult = ns.codingcontract.attempt(outputData, listFiles[z], listServers[listIndex]);
+
+                    ns.tprint([listServers[listIndex],
+                        listFiles[z],
+                        inputType,
+                        outputData,
+                        outputResult
+                    ]);
+                    if (!outputResult) {
+                        ns.tprint("Failed data for debug: " + JSON.stringify(inputData));
+                    }
+                    break;
+                case "Sanitize Parentheses in Expression":
+                    outputData = await solverParens(ns, inputData);
                     outputResult = ns.codingcontract.attempt(outputData, listFiles[z], listServers[listIndex]);
 
                     ns.tprint([listServers[listIndex],

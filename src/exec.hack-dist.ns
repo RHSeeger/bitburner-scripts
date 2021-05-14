@@ -5,6 +5,15 @@
  *     https://gist.github.com/jaguilar/a8f7cb8da78cbddc2a06415fdf97df27
  */
 
+/*
+ * TODO: Running into this issue sometimes.
+ * > Not enough RAM to run script exec.flexihack.ns with args ["iron-gym", "hacking/6"]. This likely occurred because
+ * > you re-loaded the game and the script's RAM usage increased (either because of an update to the game or your
+ * > changes to the script.)
+ * Changing the amount of memory on the home server seems to stop it, presumably by avoiding whatever edge case
+ *     is causing it.
+ */
+
 import {
     execa
     } from 'lib.execa.ns';
@@ -66,9 +75,10 @@ async function resetScripts(ns, server) {
  * used on [home]
  */
 function getMemoryUsable(ns, server) {
-    let memory = getMemoryAvailable(ns, server);
+    const hostname = getHostname(server);
+    let memory = ns.getServerMaxRam(hostname) - ns.getServerUsedRam(hostname); //getMemoryAvailable(ns, server);
     if (getHostname(server) === 'home') {
-        let totalMemory = getMemoryTotal(ns, server);
+        let totalMemory = ns.getServerMaxRam(hostname); //getMemoryTotal(ns, server);
         let reserved = Math.max(HOME_RESERVED_MEMORY, HOME_RESERVED_FRACTION * totalMemory);
         memory -= reserved;
     }
@@ -108,7 +118,9 @@ function scheduleOn(ns, attackServersIn, jobScript, numberToRun, targetHostname,
                 useMemory(ns, server, (threadsOnThisHost * ramPerTask));
             } else {
                 ns.tprint("Unable to run: " + JSON.stringify(argList));
-                exit();
+                //exit();
+                // There's _something_ weird going on. Try reducing the amount of memory we think it has
+                useMemory(ns, server, 1);
             }
         }
 

@@ -89,18 +89,18 @@ function acquireRootOneServer(ns, server) {
     }
 
     const numPortsRequired = getServerNumPortsRequired(ns, server);
-    if (numPortsRequired > getNumPortHacks(ns)) {
+    const numPortHacks = getNumPortHacks(ns);
+    if (numPortsRequired > numPortHacks) {
         return false;
     }
 
     const crackPrograms = getCrackPrograms(ns);
     var keys = Object.keys(crackPrograms);
-    for (var i = 0; i < keys.length && i < numPortsRequired; ++i) {
+    // TODO: Stop when enough ports have been opened
+    for (var i = 0; i < keys.length; ++i) {
         var filename = keys[i];
         if (ns.fileExists(filename, 'home')) {
             crackPrograms[filename](hostname);
-        } else {
-            throw("Unable to locale hack script: " + filename);
         }
     }
 
