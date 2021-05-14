@@ -1,0 +1,187 @@
+/*
+ * Executable: exec.purchase-servers.ns
+ *
+ * Buys purchasable servers as money is available.
+ * Next server to buy is a minimum level of twice the memory of the current highest server
+ * Will not buy a server if it costs more than SPENDABLE_FRACTION of the player's total cash
+ * Will not buy a server if it will leave the player with less than RESERVED_CASH total cash
+ *
+ * TODO: If there are not <max # servers> currently owned, buy the biggest size the player can afford.
+ *       Don't wait to buy one bigger than the current biggest
+ */
+
+import {signal} from 'lib.signal.ns';
+
+const SPENDABLE_FRACTION = 0.50;
+const RESERVED_CASH = 1000000;
+
+const MIN_SERVER_SIZE = 3; // Don't buy servers with less than 2^3 memory (not used yet)
+
+const SERVER_NAME_PATTERN_WITH_SIZE = /^pserv-(\d+)-(\d+)$/;
+const SERVER_NAME_PATTERN_NO_SIZE = /^pserv-(\d+)$/;
+
+function getIndexFromHostname(hostname) {
+    if (SERVER_NAME_PATTERN_WITH_SIZE.test(hostname)) {
+        const matches = hostname.match(SERVER_NAME_PATTERN_WITH_SIZE);
+        return matches[2];
+    } else if (SERVER_NAME_PATTERN_NO_SIZE.test(hostname)) {
+        const matches = hostname.match(SERVER_NAME_PATTERN_NO_SIZE);
+        return matches[1];
+    } else {
+        // Doesn't match our patterns
+        return null;
+    }
+}
+
+function stopScripts(ns, hostname) {
+    ns.print("Killing all programs on [" + hostname + "]");
+    do {
+        ns.killall(hostname);
+    } while (ns.getServerRam(hostname)[1] > 0);
+}
+
+function deleteServer(ns, hostname) {
+    if (!ns.serverExists(hostname)) {
+        return true;
+    }
+
+    stopScripts(ns, hostname);
+    if (!ns.deleteServer(hostname)) {
+        ns.print("Failed to delete server: " + hostname);
+        return false;
+    }
+
+    return true;
+}
+
+function getUnusedIndex(servers) {
+    const usedIndexes = servers
+        .map((hostname) => {
+            if (SERVER_NAME_PATTERN_WITH_SIZE.test(hostname)) {
+                const matches = hostname.match(SERVER_NAME_PATTERN_WITH_SIZE);
+                return matches[2];
+            } else if (SERVER_NAME_PATTERN_NO_SIZE.test(hostname)) {
+                const matches = hostname.match(SERVER_NAME_PATTERN_NO_SIZE);
+                return matches[1];
+            } else {
+                // Doesn't match our patterns
+                return null;
+            }
+        })
+        .filter((index) => index !== null);
+    for (let i = 0; i < 100; i++) {
+        if (!usedIndexes.contains(i)) {
+            return i;
+        }
+    }
+    return null;
+}
+
+function purchaseServer(ns) {
+
+    const servers = ns.getPurchasedServers();
+    const maxServers = ns.getPurchasedServerLimit();
+
+    const serversRam = new Map();
+    servers.forEach((hostname) => serversRam.set(hostname, ns.getServerRam(hostname)[0]));
+
+    // Find the hostname with the maximum amount of ram and minimum
+    let hostnameMinRam = null;
+    let hostnameMaxRam = null;
+    servers.forEach((hostname) => {
+        if (hostnameMinRam === null || serversRam.get(hostname) < serversRam.get(hostnameMinRam)) {
+            hostnameMinRam = hostname;
+        }
+        if (hostnameMaxRam === null || serversRam.get(hostname) > serversRam.get(hostnameMaxRam)) {
+            hostnameMaxRam = hostname;
+        }
+    });
+
+    if (hostnameMinRam === null) {
+        ns.print("No current servers");
+    }
+
+    if (hostnameMinRam !== null && serversRam.get(hostnameMinRam) >= Math.pow(2, 20) && servers.length >= maxServers) {
+        // All current servers are max size and we cannot purchase any more
+        ns.print("All serves are of max size");
+        return false;
+    }
+
+    const minRamToBuy = serversRam.get(hostnameMaxRam) * 2;
+    const minRamCost = ns.getPurchasedServerCost(minRamToBuy);
+    const userMoney = ns.getServerMoneyAvailable("home");
+    const maxSpendable = Math.min(userMoney * SPENDABLE_FRACTION, userMoney - RESERVED_CASH);
+
+    if (maxSpendable < minRamCost) {
+        // Can't afford it without going under the spendable
+        ns.print("Cannot afford a server of [" + minRamToBuy + "] @ "
+            + ns.nFormat(minRamCost, "$0.000a")
+            + " with " + ns.nFormat(maxSpendable, "$0.000a"));
+        return false;
+    }
+
+    // Consider whether we really want to jump up high
+    let maxRamCanBuy = minRamToBuy;
+    //while (ns.getPurchasedServerCost(maxRamCanBuy * 2) < maxSpendable) {
+    //    maxRamCanBuy *= 2;
+    //}
+
+    const sizeToBuy = Math.log2(maxRamCanBuy);
+    ns.print("The max sized server that can currently be bought is [" + sizeToBuy + "] for "
+        + ns.nFormat(ns.getPurchasedServerCost(maxRamCanBuy), "$0.000a"));
+
+    if (servers.length < maxServers) {
+        // Purchasing a new server
+        const desiredName = "pserv-" + sizeToBuy + "-" + servers.length;
+
+        ns.print("Buying new server [" + desiredName + "]");
+        const actualName = ns.purchaseServer(desiredName, maxRamCanBuy);
+        if (actualName !== "") {
+            ns.print("purchased new server with name: " + actualName);
+
+        } else {
+            ns.print("Failed to purchase new server with name: " + desiredName);
+        }
+    } else {
+        // Upgrading a server
+        let currentIndex = getIndexFromHostname(hostnameMinRam);
+        if (currentIndex === null) {
+            currentIndex = getUnusedIndex(servers);
+        }
+        if (currentIndex === null) {
+            ns.print("Unable to determine next hostname index to use for upgrading server: " + hostnameMinRam);
+            return false;
+        }
+        const desiredName = "pserv-" + sizeToBuy + "-" + currentIndex;
+
+        ns.print("Upgrading [" + hostnameMinRam + "] to [" + desiredName);
+        deleteServer(ns, hostnameMinRam);
+
+        const actualName = ns.purchaseServer(desiredName, maxRamCanBuy);
+        if (actualName !== "") {
+            ns.print("Purchased new server with name: " + actualName);
+
+        } else {
+            ns.print("Failed to purchase new server with name: " + desiredName);
+        }
+    }
+
+    return true;
+}
+
+export async function main(ns) {
+    while (true) {
+        let numPurchased = 0;
+        while (purchaseServer(ns)) {
+            // Try to purchase/upgrade as many servers as we can can before notifying
+            numPurchased += 1;
+            await ns.sleep(100)
+        }
+
+        if (numPurchased > 0) {
+            signal(ns, `Upgraded ${numPurchased} servers`);
+        }
+
+        await ns.sleep(10 * 1000);
+    }
+}
