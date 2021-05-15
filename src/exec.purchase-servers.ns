@@ -107,7 +107,9 @@ function purchaseServer(ns) {
         return false;
     }
 
-    const minRamToBuy = Math.min(serversRam.get(hostnameMaxRam) * 2, Math.pow(2, 20));
+    const minRamToBuy = hostnameMinRam === null
+        ? Math.pow(2, MIN_SERVER_SIZE)
+        : Math.min(serversRam.get(hostnameMaxRam) * 2, Math.pow(2, 20));
     const minRamCost = ns.getPurchasedServerCost(minRamToBuy);
     const userMoney = ns.getServerMoneyAvailable("home");
     const maxSpendable = Math.min(userMoney * SPENDABLE_FRACTION, userMoney - RESERVED_CASH);

@@ -18,22 +18,40 @@ const CRIMES_TO_DO = [
 ];
 
 export async function main(ns) {
-    //CRIMES_TO_DO.forEach((crime) => {
-    //    ns.tprint("Crime chance: " + crime + " = " + ns.getCrimeChance(crime)) + " * " + ns.getCrimeStats(crime);
-    //});
+    ns.tail(); // It's active, and this gives us a way to kill it off if it becomes a problem
 
-    while (true) {
+    let stillCriming = true;
+
+    while (stillCriming) {
         if (!ns.isBusy()) {
             const bestCrime = CRIMES_TO_DO.sort((a, b) => {
                 const statsA = ns.getCrimeStats(a);
                 const statsB = ns.getCrimeStats(b);
                 return (ns.getCrimeChance(b) * statsB.money / statsB.time) - (ns.getCrimeChance(a) * statsA.money / statsA.time)
             })[0];
-            ns.print("Best crime: " + bestCrime);
-            ns.commitCrime(bestCrime);
+
+            const crimeStats = ns.getCrimeStats(bestCrime);
+
+            ns.print("Best crime: " + bestCrime + " at " + crimeStats.time + "s for " + ns.nFormat(crimeStats.money, "$0.000a") );
+
+            const timeToComplete = ns.commitCrime(bestCrime);
+            await ns.sleep(10);
+
+            let player = ns.getPlayer();
+            const expectedWorkType = player.workType;
+            const expectedCrimeType = player.crimeType;
+
+            await ns.sleep(crimeStats.time * 4 / 5);
+
+            player = ns.getPlayer();
+            stillCriming = player.isWorking === true
+                && player.workType === expectedWorkType
+                && player.crimeType === expectedCrimeType;
+
+            ns.print("Still Criming? " + stillCriming);
         }
 
-        await ns.sleep(10000);
+        await ns.sleep(1000);
     }
 }
 
@@ -43,9 +61,9 @@ export async function main(ns) {
  If you are then the human player didn't cancel and you should do it again.
  If you did cancel then quit.
 
-Will need to check (at the 75% mark) to see if the player is still doing the crime that was scheduled
-Since the user could have canceled the crime and started some other busy work
-Can use getPlayer for that.
+ Will need to check (at the 75% mark) to see if the player is still doing the crime that was scheduled
+ Since the user could have canceled the crime and started some other busy work
+ Can use getPlayer for that.
 
 
  */
