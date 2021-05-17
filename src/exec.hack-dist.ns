@@ -35,6 +35,14 @@ const SCRIPT_WATCH_HACKABLE = "exec.watch-hackable.ns";
 const SCRIPT_FLEXIHACK = "exec.flexihack.ns";
 const SCRIPT_WEAKEN = "exec.weaken.ns";
 
+const NUM_FLEXIS_PER_WEAKEN = 6; // Normally 6
+const SCRIPTS_TO_KILL = [
+    SCRIPT_FLEXIHACK,
+    SCRIPT_WEAKEN,
+    // scripts from exec.hack=scheduler.ns, which will also need to be killed off if they are running
+    "hack.ns", "grow.ns", "weaken.ns"
+];
+
 const SCRIPTS_TO_COPY = [
     SCRIPT_FLEXIHACK,
     SCRIPT_WEAKEN,
@@ -55,12 +63,15 @@ async function resetScripts(ns, server) {
     });
 
     const hostname = getHostname(server);
-    while (ns.scriptKill(SCRIPT_FLEXIHACK, hostname)) {
+    while (SCRIPTS_TO_KILL.filter((script) => ns.scriptKill(script, hostname)).length > 0) {
         await ns.sleep(100);
     }
-    while (ns.scriptKill(SCRIPT_WEAKEN, hostname)) {
-        await ns.sleep(100);
-    }
+    //while (ns.scriptKill(SCRIPT_FLEXIHACK, hostname)) {
+    //    await ns.sleep(100);
+    //}
+    //while (ns.scriptKill(SCRIPT_WEAKEN, hostname)) {
+    //    await ns.sleep(100);
+    //}
     if (hostname !== "home") {
         do {
             ns.killall(hostname);
@@ -160,7 +171,7 @@ async function doHacksWeakens(ns, targetServers, attackServers) {
             //ns.tprint("already weakened: " + targetHostname);
             // Just spawn one weaken and a round of flexihacks. This is to make early game cashflow less painful.
             attackServers = scheduleOn(ns, attackServers, SCRIPT_WEAKEN, 1, targetHostname, TAG_WEAKENING + "/" + loop);
-            attackServers = scheduleOn(ns, attackServers, SCRIPT_FLEXIHACK, 6, targetHostname, TAG_WEAKENING + "/" + loop);
+            attackServers = scheduleOn(ns, attackServers, SCRIPT_FLEXIHACK, NUM_FLEXIS_PER_WEAKEN, targetHostname, TAG_WEAKENING + "/" + loop);
         } else {
             // Spawn only weakens until security is near minimum.
             let numberOfWeakens = Math.floor((ns.getServerSecurityLevel(targetHostname) - ns.getServerMinSecurityLevel(targetHostname)) / 0.05);
@@ -177,13 +188,13 @@ async function doHacksWeakens(ns, targetServers, attackServers) {
 async function doHacksFlexi(ns, targetServers, attackServers) {
     const scriptSizeWeaken = ns.getScriptRam(SCRIPT_WEAKEN, "home");
     const scriptSizeFlexi = ns.getScriptRam(SCRIPT_FLEXIHACK, "home");
-    const batchMemoryRequired = scriptSizeWeaken + (6 * scriptSizeFlexi);
-    //ns.tprint("Memory per batch: " + batchMemoryRequired + " (" + scriptSizeWeaken + " + (6 * " + scriptSizeFlexi + "))");
+    const batchMemoryRequired = scriptSizeWeaken + (NUM_FLEXIS_PER_WEAKEN * scriptSizeFlexi);
+    //ns.tprint("Memory per batch: " + batchMemoryRequired + " (" + scriptSizeWeaken + " + (NUM_FLEXIS_PER_WEAKEN * " + scriptSizeFlexi + "))");
 
     const totalMemoryAvailable = attackServers
         .map((server) => getMemoryUsable(ns, server))
         .reduce((accumulator, currentValue) => accumulator + currentValue);
-    // Calculate the number of batches (1 weaken + 6 flexi) to run on against each target
+    // Calculate the number of batches (1 weaken + NUM_FLEXIS_PER_WEAKEN flexi) to run on against each target
     // We round up because we'd rather have more batches on the earlier hosts and run out on the later/lower hosts
     const numBatchesPerTarget = Math.ceil(totalMemoryAvailable / batchMemoryRequired / targetServers.length);
 
@@ -198,7 +209,7 @@ async function doHacksFlexi(ns, targetServers, attackServers) {
         // Add the "rounds" to the tag so that the system considers them "different" scripts
         const numWeakens = numBatchesPerTarget;
         scheduleOn(ns, attackServers, SCRIPT_WEAKEN, numWeakens, targetHostname, TAG_HACKING + "/" + i);
-        const numFlexis = 6 * numBatchesPerTarget;
+        const numFlexis = NUM_FLEXIS_PER_WEAKEN * numBatchesPerTarget;
         scheduleOn(ns, attackServers, SCRIPT_FLEXIHACK, numFlexis, targetHostname, TAG_HACKING + "/" + i);
 
         await ns.sleep(10); // to give the ui a chance to update
@@ -267,7 +278,8 @@ export async function main(ns) {
 
         const possibleTargetServers = servers
             .filter((server) => !purchasedServers.includes(getHostname(server)))
-            .filter((server) => !["darkweb", "home"].includes(getHostname(server)));
+            .filter((server) => !["darkweb", "home"].includes(getHostname(server)))
+            .filter((server) => !getHostname(server).startsWith("hacknet-"));
 
         const currentlyHackable = possibleTargetServers
             .filter((server) => ns.hasRootAccess(getHostname(server)) === true)

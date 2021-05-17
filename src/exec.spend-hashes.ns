@@ -1,0 +1,24 @@
+/*
+ * Spends Hacknet node hashes if the cache is full
+ */
+
+const PURCHASE_CONTRACT = "Generate Coding Contract";
+const PURCHASE_MONEY = "Sell for Money";
+
+export async function main(ns) {
+    while (true) {
+        await ns.sleep(5 * 1000);
+
+        const numHashes = ns.hacknet.numHashes();
+        if (numHashes < (0.95 * ns.hacknet.hashCapacity())) {
+            continue;
+        }
+        if (numHashes >= ns.hacknet.hashCost(PURCHASE_CONTRACT)) {
+            ns.print("Spending hacknet hash : " + PURCHASE_CONTRACT);
+            ns.hacknet.spendHashes(PURCHASE_CONTRACT);
+        } else if (numHashes >= ns.hacknet.hashCost(PURCHASE_MONEY)) {
+            ns.print("Spending hacknet hash: " + PURCHASE_MONEY);
+            ns.hacknet.spendHashes(PURCHASE_MONEY);
+        }
+    }
+}

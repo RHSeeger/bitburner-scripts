@@ -1,0 +1,476 @@
+/*
+ * Executable: exec.hack-scheduler.ns
+ * Runs Hack/Weaken/Grow/Weaken against optimal targets
+ *
+ * This is a replacement for exec.hack-dist.ns, which was much simpler
+ *
+ * NOTE: This is still a work in progress
+ * TODO: Update scheduling periodically?
+ *       Update scheduling when a new list of best targets is available
+ */
+
+
+import {
+    execa
+    } from 'lib.execa.ns';
+import {
+    awaitSignal,
+    consumeSignal
+    } from 'lib.signal.ns'
+import {
+    getServerList,
+    getHostname,
+    useMemory
+    } from 'lib.servers.ns';
+
+const HACK_SECURITY_PER_THREAD = 0.002;
+const GROW_SECURITY_PER_THREAD = 0.004;
+const WEAKEN_SECURITY_PER_THREAD = 0.05; // it's actually -0.05 since it lowers it, but formulas account for that
+
+const SCRIPT_WEAKEN = "weaken.ns";
+const SCRIPT_GROW = "grow.ns";
+const SCRIPT_HACK = "hack.ns";
+
+const NUM_FLEXIS_PER_WEAKEN = 6; // Normally 6
+const SCRIPTS_TO_KILL = [
+    SCRIPT_GROW, SCRIPT_HACK, SCRIPT_WEAKEN,
+    // scripts from exec.hack-dist.ns, which will also need to be killed off if they are running
+    "exec.flexihack.ns", "exec.weaken.ns"
+];
+
+const SCRIPTS_TO_COPY = [
+    SCRIPT_GROW, SCRIPT_HACK, SCRIPT_WEAKEN,
+];
+
+// 10% of the home server's memory, with a minimum of 100g, is reserved to not be used by this script
+const HOME_RESERVED_MEMORY = 100;
+const HOME_RESERVED_FRACTION = 0.10;
+
+/*
+ * Returns the percentage of the server's money that would be returned by single hack thread
+ * if the server was at minimum security (difficulty)
+ */
+function getHackPercentAt0(ns, player, server) {
+    const currentSecurity = server.hackDifficulty;
+
+    server.hackDifficulty = server.minDifficulty;
+    let hackPercentage = 100 * ns.formulas.basic.hackPercent(server, player);
+    server.hackDifficulty = currentSecurity;
+
+    return hackPercentage;
+}
+
+function getHackChanceAt0(ns, player, server) {
+    const currentSecurity = server.currentSecurity;
+
+    server.hackDifficulty = server.minDifficulty;
+    let hackingChance = ns.formulas.basic.hackChance(server, player);
+    server.hackDifficulty = currentSecurity;
+
+    return hackingChance;
+}
+
+function getHackTimeAt0(ns, player, server) {
+    const currentSecurity = server.currentSecurity;
+
+    server.hackDifficulty = server.minDifficulty;
+    let hackTime = ns.formulas.basic.hackTime(server, player);
+    server.hackDifficulty = currentSecurity;
+
+    return hackTime;
+}
+
+function getGrowPercentAt0(ns, player, server) {
+    const currentSecurity = server.currentSecurity;
+
+    server.hackDifficulty = server.minDifficulty;
+    let hackTime = 100 * ns.formulas.basic.growPercent(server, 1, player);
+    server.hackDifficulty = currentSecurity;
+
+    return hackTime;
+}
+
+function getGrowTimeAt0(ns, player, server) {
+    const currentSecurity = server.currentSecurity;
+
+    server.hackDifficulty = server.minDifficulty;
+    let hackTime = ns.formulas.basic.growTime(server, player);
+    server.hackDifficulty = currentSecurity;
+
+    return hackTime;
+}
+
+function getWeakenTimeAt0(ns, player, server) {
+    const currentSecurity = server.currentSecurity;
+
+    server.hackDifficulty = server.minDifficulty;
+    let hackTime = ns.formulas.basic.weakenTime(server, player);
+    server.hackDifficulty = currentSecurity;
+
+    return hackTime;
+}
+
+/*
+ * Returns the list of targets, sorted by their efficiency of hacking money; most efficient first
+ * Also sets a number of useful fields on the target servers
+ */
+function getTargettingInfo(ns, targets) {
+    const player = ns.getPlayer()
+
+    for (let i = 0; i < targets.length; i++) {
+        const target = targets[i];
+        const hostname = getHostname(target);
+        const server = ns.getServer(hostname);
+
+        target.maxMoney = server.moneyMax;
+        target.hackPercentAt0 = getHackPercentAt0(ns, player, server);
+        target.hackChanceAt0 = getHackChanceAt0(ns, player, server);
+        target.hackTimeAt0 = getHackTimeAt0(ns, player, server);
+        target.growPercentAt0 = getGrowPercentAt0(ns, player, server);
+        target.growTimeAt0 = getGrowPercentAt0(ns, player, server);
+        target.weakenTimeAt0 = getGrowPercentAt0(ns, player, server);
+
+        target.hackScore = (target.maxMoney * target.hackChanceAt0 * target.hackPercentAt0) / target.hackTimeAt0;
+    }
+
+    // Return them in the order of best to worst
+    return targets.sort((target1, target2) => target2.hackScore - target1.hackScore);
+}
+
+function copyList(list) {
+    return list.slice(0, list.length);
+}
+
+/*
+ * Pretty much the same as servers.getMemoryAvailable, but reserves some amount to not being
+ * used on [home]
+ */
+function getMemoryUsable(ns, hostname) {
+    let memory = ns.getServerMaxRam(hostname) - ns.getServerUsedRam(hostname);
+    if (hostname === 'home') {
+        let totalMemory = ns.getServerMaxRam(hostname); //getMemoryTotal(ns, server);
+        let reserved = Math.max(HOME_RESERVED_MEMORY, HOME_RESERVED_FRACTION * totalMemory);
+        memory -= reserved;
+    }
+
+    return memory;
+}
+
+// Figure out how many ack threads it will take to completely drain this target
+function calculateHackThreads(hackPercentage, targetServer) {
+    return Math.floor(hackPercentage / targetServer.hackPercentAt0);
+}
+
+// The number of weaken threads to get back to 0 security after hacking
+function calculateWeakenHackThreads(hackThreads) {
+    return Math.ceil((hackThreads * HACK_SECURITY_PER_THREAD) / WEAKEN_SECURITY_PER_THREAD);
+}
+
+// The number of grow threads we need to increase the money back to 100%
+function calculateGrowThreads(hackPercentage, targetServer) {
+    return  Math.ceil(hackPercentage / targetServer.growPercentAt0);
+}
+
+// The number of weaken threads to get back to 0 security after grows
+function calculateWeakenGrowThreads(growThreads) {
+    return Math.ceil((growThreads * GROW_SECURITY_PER_THREAD) / WEAKEN_SECURITY_PER_THREAD);;
+}
+
+/*
+ * Given a specified hack percentage, calculate the memory required to run enough H/W/G/W threads to achieve
+ * that percentage
+ */
+function getScriptSizeTotal(ns, target, hackPercentage) {
+    const hackThreads = calculateHackThreads(hackPercentage, target);
+    const weakenHackThreads = calculateWeakenHackThreads(hackThreads);
+    const growThreads = calculateGrowThreads(hackPercentage, target);
+    const weakenGrowThreads = calculateWeakenGrowThreads(growThreads);
+
+    if (hackThreads <= 0 || growThreads <= 0) {
+        ns.print("At hack % " + hackPercentage + " (hack threads: " + hackThreads + ") (grow threads: " + growThreads + ")");
+        return null;
+    }
+
+    const hackSize = ns.getScriptRam(SCRIPT_HACK, "home");
+    const growSize = ns.getScriptRam(SCRIPT_GROW, "home");
+    const weakenSize = ns.getScriptRam(SCRIPT_WEAKEN, "home");
+    const totalSize = (hackThreads * hackSize) + (weakenHackThreads * weakenSize) + (growThreads * growSize) + (weakenGrowThreads * weakenSize);
+
+    ns.print("Checking values (" + hackPercentage + "%)\n"
+        + `\tThreads: (hack: ${hackThreads}) (weak: ${weakenHackThreads}) (grow: ${growThreads}) (weak: ${weakenGrowThreads})\n`
+        + `\tSizes: (hack: ${hackThreads * hackSize}) (weak: ${weakenHackThreads * weakenSize}) (grow: ${growThreads * growSize}) (weak: ${weakenGrowThreads * weakenSize})`);
+
+    return totalSize;
+}
+
+/*
+ * Returns the maximum percentage of the target server's money that can be hacked by the specified attack servers
+ */
+async function getHackPercentage(ns, target, attackServers) {
+    const availableMemory = attackServers
+        .map((server) => getHostname(server))
+        .map((hostname) => getMemoryUsable(ns, hostname))
+        .reduce((a,b) => a + b)
+        * 0.95;
+    ns.tprint("Total available memory: " + availableMemory);
+
+    let lastPercentage = 100;
+    let currentPercentage = lastPercentage;
+
+    while (true) {
+        lastPercentage = currentPercentage;
+
+        const memoryUsed = getScriptSizeTotal(ns, target, currentPercentage);
+        if (memoryUsed === null) {
+            ns.tprint("Unable to find a workable hack percentage");
+            return null;
+        }
+        if (memoryUsed > availableMemory) {
+            currentPercentage /= 2;
+            if (currentPercentage <= 0) {
+                ns.tprint("Unable to find a workable hack percentage");
+                return null;
+            }
+        } else if (memoryUsed <= availableMemory) {
+            currentPercentage = (lastPercentage + currentPercentage) / 2;
+            if (Math.abs(currentPercentage - lastPercentage) < 0.001) { // at some point we need to stop
+                return lastPercentage;
+            }
+        }
+
+        await ns.sleep(10);
+    }
+}
+
+/*
+ * Runs hack/weaken/grow/weaken targeting the specified server.
+ * Runs as many instances as it can, up to a maximum of enough to drain 100% of the target's money each cycle
+ *
+ * Returns - the list of attack servers that were not depleted of ram
+ */
+async function attack(ns, target, attackServersIn, round) {
+    let attackServers = copyList(attackServersIn);
+
+    const hackPercentage = await getHackPercentage(ns, target, attackServers);
+    ns.tprint("Found hack percentage: " + hackPercentage);
+
+    if (hackPercentage === null) {
+        // Unable to hack this target at all given the servers we have
+        return [];
+    }
+
+    const hackThreads = calculateHackThreads(hackPercentage, target);
+    const weakenHackThreads = calculateWeakenHackThreads(hackThreads);
+    const growThreads = calculateGrowThreads(hackPercentage, target);
+    const weakenGrowThreads = calculateWeakenGrowThreads(growThreads);
+
+    // How long we want each script to run for
+    const duration = Math.max(target.hackTimeAt0, target.growTimeAt0, target.weakenTimeAt0);
+    ns.tprint("Duration: " + duration);
+
+    const hackSleep = duration - target.hackTimeAt0;
+    const growSleep = duration - target.growTimeAt0;
+    const weakenSleep = duration - target.weakenTimeAt0;
+    const targetHostname = getHostname(target);
+
+    // Kick off hack first
+    attackServers = scheduleOn(ns, attackServers, SCRIPT_HACK, hackThreads, targetHostname, hackSleep, "hack-" + round);
+
+    // Then sleep for 0.1 sec and kick off a weaken
+    await ns.sleep(100);
+    attackServers = scheduleOn(ns, attackServers, SCRIPT_WEAKEN, weakenHackThreads, targetHostname, weakenSleep, "hack-weaken-" + round);
+
+    // Then sleep for 0.1 sec and kick off a grow
+    await ns.sleep(100);
+    attackServers = scheduleOn(ns, attackServers, SCRIPT_GROW, growThreads, targetHostname, growSleep, "grow-" + round);
+
+    // Then sleep for 0.1 sec and kick off a weaken
+    await ns.sleep(100);
+    attackServers = scheduleOn(ns, attackServers, SCRIPT_WEAKEN, weakenGrowThreads, targetHostname, weakenSleep, "grow-weaken-" + round);
+
+
+    return attackServers;
+}
+
+
+/*
+ * Runs [numberToRun] threads of [jobScript] on [servers] targeting [targetHostname]
+ *
+ * Tag is an unused argument to differentiate different instances of the same script.
+ */
+function scheduleOn(ns, attackServersIn, jobScript, numberToRun, targetHostname, sleepAmount, tag) {
+    let attackServers = copyList(attackServersIn);
+
+    //ns.tprint("scheduleOn: [" + jobScript + "] targeting [" + targetHostname + "] on " + attackServers.length + " servers");
+
+    // Script should have been copied out to all candidate hosts already.
+    let ramPerTask = ns.getScriptRam(jobScript, "home");
+
+    while (numberToRun > 0 && attackServers.length > 0) {
+        const server = attackServers[0];
+        const attackerHostname = getHostname(server);
+        const memoryAvailable = getMemoryUsable(ns, attackerHostname);
+        //ns.tprint("Memory available on [" + attackerHostname + "]: " + memoryAvailable);
+
+        // Schedule as many threads of the task as possible on the first host.
+        const threadsOnThisHost = Math.min(Math.floor(memoryAvailable / ramPerTask), numberToRun);
+        ns.print("Threads to run on [" + attackerHostname + "]: " + threadsOnThisHost + " threads "
+            + "(" + memoryAvailable + " memory available, " + ramPerTask + " per task");
+
+        numberToRun -= threadsOnThisHost;
+        if (threadsOnThisHost > 0) {
+            let argList = [jobScript, attackerHostname, threadsOnThisHost, targetHostname, sleepAmount, tag];
+            //ns.tprint("execute: " + argList);
+            if (execa(ns, argList)) {
+                // ran successfully
+            } else {
+                ns.tprint("Unable to run: " + JSON.stringify(argList));
+            }
+        }
+
+        // If we still have tasks left, that means we exhausted the RAM of this host.
+        if (numberToRun > 0) {
+            ns.print("consumed all ram available on " + attackerHostname);
+            attackServers.shift();
+        }
+    }
+
+    return attackServers;
+}
+
+/*
+ * Full reset of scripts on attack servers
+ * - copy required scripts to attack servers
+ * - kill off any running hack scripts (ones scheduled by this script for exec.hack-dist.ns)
+ * - kill off ALL running scripts on non-home attack servers
+ */
+async function resetScripts(ns, server) {
+    SCRIPTS_TO_COPY.forEach((scriptName) => {
+        if (!ns.fileExists(scriptName, 'home')) {
+            ns.tprint("Script not found: " + scriptName);
+        }
+    });
+
+    const hostname = getHostname(server);
+    while (SCRIPTS_TO_KILL.filter((script) => ns.scriptKill(script, hostname)).length > 0) {
+        await ns.sleep(100);
+    }
+
+    if (hostname !== "home") {
+        do {
+            ns.killall(hostname);
+        } while (ns.getServerRam(hostname)[1] > 0);
+        ns.scp(SCRIPTS_TO_COPY, "home", hostname);
+    }
+}
+
+
+export async function main(ns) {
+
+    const servers = getServerList(ns);
+
+    // Generate the list of servers we want to target with hacks
+    const purchasedServers = ns.getPurchasedServers();
+    const targets = servers
+        .filter((server) => !purchasedServers.includes(getHostname(server)))
+        .filter((server) => !["darkweb", "home"].includes(getHostname(server)))
+        .filter((server) => !getHostname(server).startsWith("hacknet-"));
+
+    const sortedTargets = getTargettingInfo(ns, targets);
+    ns.tprint("Sorted Targets\n\t" + sortedTargets.slice(0,4).map((target) => JSON.stringify(target)).join("\n\t"));
+
+    // And generate a list of servers that can be used to attack
+    let attackServers = servers
+        .filter((server) => ns.hasRootAccess(getHostname(server)))
+        //.filter((server) => !getHostname(server).startsWith("hacknet-"))
+        .filter((server) => ![ "darkweb" ].includes(getHostname(server)));
+
+    for (let i=0; i<attackServers.length; i++) {
+        await resetScripts(ns, attackServers[i]);
+    }
+
+    let remainingAttackServers = copyList(attackServers);
+    let remainingTargetServes = copyList(targets);
+    let round = 0;
+
+    while (remainingAttackServers.length > 0 && remainingTargetServes.length > 0) {
+        const currentTarget = remainingTargetServes.shift();
+        remainingAttackServers = await attack(ns, currentTarget, remainingAttackServers, round);
+        round += 1;
+        await ns.sleep(10); // Just in case, to keep things responsive
+    }
+
+    ns.tprint("There were " + remainingAttackServers.length + " remaining attack servers: "
+        + remainingAttackServers.map((server) => getHostname(server)).join(", "));
+    ns.tprint("There were " + remainingTargetServes.length + " remaining target servers: "
+        + remainingTargetServes.map((server) => getHostname(server)).join(", "));
+
+}
+
+
+
+
+
+
+/*
+ This is only notes so far
+
+
+ return ((target.moneyMax * hackingChance * hackingPercent) / hackingTime); is what I do for getting money per second per thread
+
+ Do other people have all their servers attack a single target? Or do they split them up across all targets (like mine) or do they split it up some other way?
+
+ Determine best target
+
+ Determine how many hack threads are needed to get the target from 100% money to 0% money
+ hackAnalyzeThreads
+
+ Determine how many weaken threads will get back down to min security from there
+ because hack raises security
+
+ Determine how many grow threads will bring the server back up to 100% money
+
+ Determine how many weaken threads will being the server back down to min security
+ because grow raises security
+
+ Kick off threads so they will finish in the order of: hack, weaken-1, grow, weaken-2, repeat
+
+
+ hack = +0.002 security / thread
+ grow = +0.004 security / thread
+ weaken = -0.05 security / thread
+
+
+ hack = 0.1 gb
+ grow = 0.15 gb
+ weaken = 0.15 gb
+
+ And then the last thing I think I need for a "basic" approach is ... when determining the best server to attack,
+ I've seen a formula like ((target.moneyMax * hackingChance * hackingPercent) / hackingTime) seems more or less
+ appropriate. However, it sounds like you want to determine that at min security for the server.
+ Does that mean you need to reduce every server to min security before you can really figure out which is best?
+
+ ^ No, the formulas API can help with this
+ https://bitburner.readthedocs.io/en/latest/netscript/netscriptformulasapi.html?highlight=formulas
+
+
+ let server = getServer(hostname);
+ server.currentSecurityValue = server.minimumSecurityValue;
+ let player = getPlayer();
+ let hackingChance = hackChance(server, player);
+
+ example of something similar
+ https://bitburner.readthedocs.io/en/latest/netscript/formulasapi/basic/hackTime.html
+
+
+ loop strats is when each individual process just does while(1) grow (or hack or weaken) without anything else.
+
+ Berfert the advantage of loop strats is it's much more efficient with ram usage.
+
+
+ Once per minute, check to see what the top servers to attack are.
+ If the order of the servers we're actually attacking has changed, re-distribute processes
+
+ NOTE: ns.formulas.basic.hackPercent(server,player) is returning a fraction (0-1) not a percentage (0-100)
+ Lets assume that grow is doig the same
+ */

@@ -1,0 +1,18 @@
+/*
+ * Runs grow on [args[0]] after sleeping for [args[1] + 10]
+ * Ignores any extra parameters, which can be used to tag it
+ */
+export async function main(ns) {
+    const targetHostname = ns.args[0];
+    const delay = ns.args[1] || 0;
+
+    if (!targetHostname) {
+        ns.tprint("Usage: grow.ns [target] [delay]");
+        return;
+    }
+
+    while (true) {
+        await ns.sleep(delay + 10);
+        await ns.grow(targetHostname);
+    }
+}
