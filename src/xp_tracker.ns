@@ -1,0 +1,28 @@
+/*
+ * Logs exp gain rate
+ */
+
+const KEEP = 50;
+export async function main(ns) {
+    let xpValues = [];
+
+    let lastValue = null;
+    while (true) {
+        const player = ns.getPlayer()
+        const increase = lastValue == null ? 0 : (player.hacking_exp - lastValue);
+        lastValue = player.hacking_exp;
+
+        xpValues.push(increase);
+        if (xpValues.length > KEEP) {
+            xpValues.shift();
+        }
+        const total = xpValues.reduce((a,b) => a+b);
+        const perSec = total / xpValues.length;
+
+        //ns.print("values: " + xpValues.map(x => ns.nFormat(x, "0,0.00")));
+        ns.print("XP : " + ns.nFormat(player.hacking_exp, "0,0.00") + " , " + ns.nFormat(perSec, "0,0.00") + "/sec")
+
+        await ns.sleep(1000);
+    }
+
+}

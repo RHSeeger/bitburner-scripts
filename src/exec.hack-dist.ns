@@ -12,6 +12,8 @@
  * > changes to the script.)
  * Changing the amount of memory on the home server seems to stop it, presumably by avoiding whatever edge case
  *     is causing it.
+ * For hacknet servers, there is a max amount of ram that will increase hashing. If it's over that amount, then allow
+ *     it to be an attack server... but reserve that max amount of memory (so it's available for hashing)
  */
 
 import {
@@ -299,6 +301,7 @@ export async function main(ns) {
         // TODO: Figure out how to add home later
         let attackServers = servers
             .filter((server) => ns.hasRootAccess(getHostname(server)))
+            .filter((server) => !getHostname(server).startsWith("hacknet-"))
             .filter((server) => !["darkweb" /*, "home" */].includes(getHostname(server)));
         ns.print("Attack Servers = " + attackServers.map((server) => getHostname(server)).join(", "));
 

@@ -1,0 +1,178 @@
+/*
+ * Executable: exec.hack-scheduler.ns
+ * Runs Hack/Weaken/Grow/Weaken against optimal targets
+ *
+ * This is a replacement for exec.hack-dist.ns, which was much simpler
+ *
+ * NOTE: This is still a work in progress
+ * TODO: Update scheduling periodically?
+ *       Update scheduling when a new list of best targets is available
+ *       For hacknet servers, there is a max amount of ram that will increase hashing. If it's over that amount, then allow
+ *           it to be an attack server... but reserve that max amount of memory (so it's available for hashing)
+ */
+
+
+import {
+    execa
+    } from 'lib.execa.ns';
+import {
+    getServerList,
+    getHostname,
+    useMemory
+    } from 'lib.servers.ns';
+
+
+const SCRIPT_WEAKEN = "weaken.script";
+
+const NUM_FLEXIS_PER_WEAKEN = 6; // Normally 6
+const SCRIPTS_TO_KILL = [
+    SCRIPT_WEAKEN,
+    // scripts from exec.hack-schedule.ns, which will also need to be killed off if they are running
+    "weaken.ns", "grow.ns", "hack.ns",
+    // scripts from exec.hack-dist.ns, which will also need to be killed off if they are running
+    "exec.flexihack.ns", "exec.weaken.ns"
+];
+
+const SCRIPTS_TO_COPY = [
+    SCRIPT_WEAKEN,
+];
+
+// 10% of the home server's memory, with a minimum of 100g, is reserved to not be used by this script
+const HOME_RESERVED_MEMORY = 100;
+const HOME_RESERVED_FRACTION = 0.10;
+
+const HACKNET_RESERVED_MEMORY = 256;
+
+function copyList(list) {
+    return list.slice(0, list.length);
+}
+
+/*
+ * Pretty much the same as servers.getMemoryAvailable, but reserves some amount to not being
+ * used on [home]
+ */
+function getMemoryUsable(ns, hostname) {
+    let maxRam = ns.getServerMaxRam(hostname);
+    let memory = maxRam - ns.getServerUsedRam(hostname);
+    if (hostname === 'home') {
+        let totalMemory = ns.getServerMaxRam(hostname); //getMemoryTotal(ns, server);
+        let reserved = Math.max(HOME_RESERVED_MEMORY, HOME_RESERVED_FRACTION * totalMemory);
+        memory -= reserved;
+    } else if (hostname.startsWith("hacknet-")) {
+        return Math.max(0, maxRam - HACKNET_RESERVED_MEMORY);
+    }
+
+    return memory;
+}
+
+
+async function attack(ns, targetHostname, attackServersIn, round) {
+    let attackServers = copyList(attackServersIn);
+
+    const availableMemory = attackServers
+            .map((server) => getHostname(server))
+            .map((hostname) => getMemoryUsable(ns, hostname))
+            .reduce((a,b) => a + b)
+        * 0.95;
+    ns.tprint("Total available memory: " + availableMemory);
+
+    const scriptSize = ns.getScriptRam(SCRIPT_WEAKEN, "home");
+    const numThreads = availableMemory / scriptSize;
+
+    attackServers = scheduleOn(ns, attackServers, SCRIPT_WEAKEN, numThreads, targetHostname, "max-weaken");
+    return attackServers;
+}
+
+
+/*
+ * Runs [numberToRun] threads of [jobScript] on [servers] targeting [targetHostname]
+ *
+ * Tag is an unused argument to differentiate different instances of the same script.
+ */
+function scheduleOn(ns, attackServersIn, jobScript, numberToRun, targetHostname, tag) {
+    let attackServers = copyList(attackServersIn);
+
+    //ns.tprint("scheduleOn: [" + jobScript + "] targeting [" + targetHostname + "] on " + attackServers.length + " servers");
+
+    // Script should have been copied out to all candidate hosts already.
+    let ramPerTask = ns.getScriptRam(jobScript, "home");
+
+    while (numberToRun > 0 && attackServers.length > 0) {
+        const server = attackServers[0];
+        const attackerHostname = getHostname(server);
+        const memoryAvailable = getMemoryUsable(ns, attackerHostname);
+        //ns.tprint("Memory available on [" + attackerHostname + "]: " + memoryAvailable);
+
+        // Schedule as many threads of the task as possible on the first host.
+        const threadsOnThisHost = Math.min(Math.floor(memoryAvailable / ramPerTask), numberToRun);
+        ns.print("Threads to run on [" + attackerHostname + "]: " + threadsOnThisHost + " threads "
+            + "(" + memoryAvailable + " memory available, " + ramPerTask + " per task");
+
+        numberToRun -= threadsOnThisHost;
+        if (threadsOnThisHost > 0) {
+            let argList = [jobScript, attackerHostname, threadsOnThisHost, targetHostname, tag];
+            //ns.tprint("execute: " + argList);
+            if (execa(ns, argList)) {
+                // ran successfully
+            } else {
+                ns.tprint("Unable to run: " + JSON.stringify(argList));
+            }
+        }
+
+        // If we still have tasks left, that means we exhausted the RAM of this host.
+        if (numberToRun > 0) {
+            ns.print("consumed all ram available on " + attackerHostname);
+            attackServers.shift();
+        }
+    }
+
+    return attackServers;
+}
+
+/*
+ * Full reset of scripts on attack servers
+ * - copy required scripts to attack servers
+ * - kill off any running hack scripts (ones scheduled by this script for exec.hack-dist.ns)
+ * - kill off ALL running scripts on non-home attack servers
+ */
+async function resetScripts(ns, server) {
+    SCRIPTS_TO_COPY.forEach((scriptName) => {
+        if (!ns.fileExists(scriptName, 'home')) {
+            ns.tprint("Script not found: " + scriptName);
+        }
+    });
+
+    const hostname = getHostname(server);
+    while (SCRIPTS_TO_KILL.filter((script) => ns.scriptKill(script, hostname)).length > 0) {
+        await ns.sleep(100);
+    }
+
+    if (hostname !== "home") {
+        do {
+            ns.killall(hostname);
+        } while (ns.getServerRam(hostname)[1] > 0);
+        ns.scp(SCRIPTS_TO_COPY, "home", hostname);
+    }
+}
+
+
+export async function main(ns) {
+
+    const servers = getServerList(ns);
+
+    // Generate the list of servers we want to target with hacks
+    const target = "foodnstuff";
+
+    // And generate a list of servers that can be used to attack
+    let attackServers = servers
+        .filter((server) => ns.hasRootAccess(getHostname(server)))
+        //.filter((server) => !getHostname(server).startsWith("hacknet-"))
+        .filter((server) => ![ "darkweb" ].includes(getHostname(server)));
+
+    for (let i=0; i<attackServers.length; i++) {
+        await resetScripts(ns, attackServers[i]);
+    }
+
+    let remainingAttackServers = copyList(attackServers);
+    await attack(ns, target, remainingAttackServers);
+}

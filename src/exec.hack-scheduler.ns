@@ -7,6 +7,8 @@
  * NOTE: This is still a work in progress
  * TODO: Update scheduling periodically?
  *       Update scheduling when a new list of best targets is available
+ *       For hacknet servers, there is a max amount of ram that will increase hashing. If it's over that amount, then allow
+ *           it to be an attack server... but reserve that max amount of memory (so it's available for hashing)
  */
 
 
@@ -45,6 +47,8 @@ const SCRIPTS_TO_COPY = [
 // 10% of the home server's memory, with a minimum of 100g, is reserved to not be used by this script
 const HOME_RESERVED_MEMORY = 100;
 const HOME_RESERVED_FRACTION = 0.10;
+
+const HACKNET_RESERVED_MEMORY = 256;
 
 /*
  * Returns the percentage of the server's money that would be returned by single hack thread
@@ -146,11 +150,14 @@ function copyList(list) {
  * used on [home]
  */
 function getMemoryUsable(ns, hostname) {
-    let memory = ns.getServerMaxRam(hostname) - ns.getServerUsedRam(hostname);
+    let maxRam = ns.getServerMaxRam(hostname);
+    let memory = maxRam - ns.getServerUsedRam(hostname);
     if (hostname === 'home') {
         let totalMemory = ns.getServerMaxRam(hostname); //getMemoryTotal(ns, server);
         let reserved = Math.max(HOME_RESERVED_MEMORY, HOME_RESERVED_FRACTION * totalMemory);
         memory -= reserved;
+    } else if (hostname.startsWith("hacknet-")) {
+        return Math.max(0, maxRam - HACKNET_RESERVED_MEMORY);
     }
 
     return memory;

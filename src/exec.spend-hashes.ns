@@ -4,18 +4,24 @@
 
 const PURCHASE_CONTRACT = "Generate Coding Contract";
 const PURCHASE_MONEY = "Sell for Money";
+const PURCHASE_STUDY = "Improve Studying";
 
 export async function main(ns) {
     while (true) {
-        await ns.sleep(5 * 1000);
+        await ns.sleep(5 * 100);
 
         const numHashes = ns.hacknet.numHashes();
-        if (numHashes < (0.95 * ns.hacknet.hashCapacity())) {
+        if (numHashes < (0.80 * ns.hacknet.hashCapacity())) {
             continue;
         }
         if (numHashes >= ns.hacknet.hashCost(PURCHASE_CONTRACT)) {
             ns.print("Spending hacknet hash : " + PURCHASE_CONTRACT);
             ns.hacknet.spendHashes(PURCHASE_CONTRACT);
+        } else if (numHashes >= ns.hacknet.hashCost(PURCHASE_STUDY)) {
+            // Wierd that this isn't happening normally. it is, but not when it should..
+            // its running when hashes is much higher than it needs to be
+            ns.print("Spending hacknet hash: " + PURCHASE_STUDY);
+            ns.hacknet.spendHashes(PURCHASE_STUDY);
         } else if (numHashes >= ns.hacknet.hashCost(PURCHASE_MONEY)) {
             ns.print("Spending hacknet hash: " + PURCHASE_MONEY);
             ns.hacknet.spendHashes(PURCHASE_MONEY);

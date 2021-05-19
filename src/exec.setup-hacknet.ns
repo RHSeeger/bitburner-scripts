@@ -1,0 +1,159 @@
+/*
+ * Executeable: setup-hacknet.ns
+ *
+ * Idea From: https://www.reddit.com/r/Bitburner/comments/7ov7a6/the_ultimate_hacknet_script_almost/
+ * But HEAVILY changed as far as code
+ */
+
+const BREAK_EVEN_TIME = 60 * 60 * 0.5; // 0.5 hours inseconds
+const SPENDABLE_FRACTION = 0.50;
+const RESERVED_CASH = 1000000;
+
+/*
+ * Dynamically determine the "unknown" multipliers and return a hash gain rate function that uses it
+ */
+function generateCalculateHashGainRate(ns) {
+    if (ns.hacknet.numNodes() < 1) {
+        return null;
+    }
+    const nodeStats = ns.hacknet.getNodeStats(0);
+    let ramMax = ns.getServerMaxRam(nodeStats.name);
+    let ramUsed = ns.getServerUsedRam(nodeStats.name);
+
+    const func = function(serverLevel, serverRamUsed, serverMaxRam, serverCores) {
+            return serverLevel
+                * Math.pow(1.07, Math.log2(serverMaxRam))
+                * (1 + (serverCores - 1) / 5)
+                * (1 - serverRamUsed / serverMaxRam);
+        };
+    const unmodifiedProduction = func(nodeStats.level, ramUsed, ramMax, nodeStats.cores);
+
+    const multiplier = nodeStats.production / unmodifiedProduction;
+    ns.print("Unmodified Production: " + unmodifiedProduction);
+    ns.print("Modified Production: " + nodeStats.production);
+    ns.print("Multiplier: " + multiplier);
+
+    const calculateHashGainRate = function(serverLevel, serverMaxRam, serverCores) {
+        return func(serverLevel, 0, serverMaxRam, serverCores) * multiplier;
+    };
+    return calculateHashGainRate;
+}
+
+/*
+ * Calculates the gain in hash rate (per second) from 1 level for the specified hacknet server
+ */
+function calculateGainFromLevel(ns, serverNumber, calculateHashRate) {
+    const nodeStats = ns.hacknet.getNodeStats(serverNumber);
+    const current = calculateHashRate(nodeStats.level, nodeStats.ram, nodeStats.cores);
+    const upgraded = calculateHashRate(nodeStats.level + 1, nodeStats.ram, nodeStats.cores);
+    return upgraded - current;
+}
+
+function calculateGainFromRam(ns, serverNumber, calculateHashRate) {
+    const nodeStats = ns.hacknet.getNodeStats(serverNumber);
+    const current = calculateHashRate(nodeStats.level, nodeStats.ram, nodeStats.cores);
+    const upgraded = calculateHashRate(nodeStats.level, nodeStats.ram * 2, nodeStats.cores);
+    return upgraded - current;
+}
+
+function calculateGainFromCores(ns, serverNumber, calculateHashRate) {
+    const nodeStats = ns.hacknet.getNodeStats(serverNumber);
+    const current = calculateHashRate(nodeStats.level, nodeStats.ram, nodeStats.cores);
+    const upgraded = calculateHashRate(nodeStats.level , nodeStats.ram, nodeStats.cores + 1);
+    return upgraded - current;
+}
+
+/*
+ * Upgrade the best thing on the best server, if it makes sense
+ */
+function upgrade(ns) {
+    const numNodes = ns.hacknet.numNodes();
+    if (numNodes < 1) {
+        return false;
+    }
+    const calculateHashRate = generateCalculateHashGainRate(ns);
+    const userMoney = ns.getServerMoneyAvailable("home");
+    const maxSpendable = Math.min(userMoney * SPENDABLE_FRACTION, userMoney - RESERVED_CASH);
+
+    let bestOption = null; // {index, stat, payback, code}
+    for (let i = 0; i < numNodes; i++) {
+        {
+            // level
+            const gain = calculateGainFromLevel(ns, i, calculateHashRate);
+            const cost = ns.hacknet.getLevelUpgradeCost(i, 1);
+            const payback = cost / gain;
+            if (cost < maxSpendable && (bestOption == null || bestOption.payback > payback)) {
+                bestOption = { index: i, stat: 'level', payback: payback, cost: cost, gain: gain };
+            }
+        }
+        {
+            // ram
+            const gain = calculateGainFromRam(ns, i, calculateHashRate);
+            const cost = ns.hacknet.getRamUpgradeCost(i, 1);
+            const payback = cost / gain;
+            if (cost < maxSpendable && (bestOption == null || bestOption.payback > payback)) {
+                bestOption = { index: i, stat: 'ram', payback: payback, cost: cost, gain: gain };
+            }
+        }
+        {
+            // cores
+            const gain = calculateGainFromCores(ns, i, calculateHashRate);
+            const cost = ns.hacknet.getCoreUpgradeCost(i, 1);
+            const payback = cost / gain;
+            if (cost < maxSpendable && (bestOption == null || bestOption.payback > payback)) {
+                bestOption = { index: i, stat: 'cores', payback: payback, cost: cost, gain: gain };
+            }
+        }
+    }
+
+    if (bestOption == null) {
+        ns.print("Unable to find any upgrade option");
+        return false;
+    }
+
+    const timeToEarn4 = 4 / bestOption.gain;
+    const timeToBreakEven = bestOption.cost // $
+        * (4 / 1000000)                     // hashes / million $
+        * (1 / bestOption.gain);            // seconds per hash (from hash/sec)
+
+    if (timeToBreakEven > BREAK_EVEN_TIME) {
+        ns.print("Failed: Best upgrade was " + bestOption.stat + " for " + bestOption.index
+            + " will cost " + ns.nFormat(bestOption.cost, "0,0.000a")
+            + ", will gain " + ns.nFormat(bestOption.gain, "0,0.000a") + " hashes/second"
+            + " and will pay for itself in " + ns.tFormat(timeToBreakEven * 1000));
+        return false;
+    }
+
+    ns.print("Found an upgrade of " + bestOption.stat + " for " + bestOption.index
+        + " will cost " + ns.nFormat(bestOption.cost, "0,0.000a")
+        + ", will gain " + ns.nFormat(bestOption.gain, "0,0.000a") + " hashes/second"
+        + " and will pay for itself in " + ns.tFormat(timeToBreakEven * 1000));
+
+    switch(bestOption.stat) {
+        case 'level':
+            ns.hacknet.upgradeLevel(bestOption.index, 1);
+            break;
+        case 'ram':
+            ns.hacknet.upgradeRam(bestOption.index, 1);
+            break;
+        case 'cores':
+            ns.hacknet.upgradeCore(bestOption.index, 1);
+            break;
+        default:
+            ns.print("Unknown stat: " + bestOption.stat);
+            return false;
+    }
+
+    return true;
+}
+
+export async function main(ns) {
+    while (true) {
+        if (upgrade(ns)) {
+            await ns.sleep(1000);
+        } else {
+            await ns.sleep(10000);
+        }
+    }
+}
+
