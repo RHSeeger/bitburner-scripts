@@ -9,6 +9,13 @@
  *       Update scheduling when a new list of best targets is available
  *       For hacknet servers, there is a max amount of ram that will increase hashing. If it's over that amount, then allow
  *           it to be an attack server... but reserve that max amount of memory (so it's available for hashing)
+ *
+ * TODO: Well, growth is totally off
+ * - a hack operation with 10 threads gives you 10 times the percentage a single hack thread gives
+ * - a grow operation with 10 threads, on the other hand, gives you an exponential amount of growth—sort of but not entirely like performing 10 single-threaded growths in a row
+ * - and grow adds 1 THEN multiplies by that amount
+ * ^ still need to account for that
+ * But at least my percentages are rightnow
  */
 
 
@@ -58,6 +65,7 @@ function getHackPercentAt0(ns, player, server) {
     const currentSecurity = server.hackDifficulty;
 
     server.hackDifficulty = server.minDifficulty;
+    // The function actually returns the number that you would multiple the server money by
     let hackPercentage = 100 * ns.formulas.basic.hackPercent(server, player);
     server.hackDifficulty = currentSecurity;
 
@@ -88,7 +96,8 @@ function getGrowPercentAt0(ns, player, server) {
     const currentSecurity = server.currentSecurity;
 
     server.hackDifficulty = server.minDifficulty;
-    let hackTime = 100 * ns.formulas.basic.growPercent(server, 1, player);
+    // The function actually returns the number that you would multiple the server money by
+    let hackTime = (ns.formulas.basic.growPercent(server, 1, player) - 1) * 100;
     server.hackDifficulty = currentSecurity;
 
     return hackTime;
@@ -176,6 +185,7 @@ function calculateWeakenHackThreads(hackThreads) {
 // The number of grow threads we need to increase the money back to 100%
 function calculateGrowThreads(hackPercentage, targetServer) {
     return  Math.ceil(hackPercentage / targetServer.growPercentAt0);
+    //return  Math.ceil(100 / targetServer.growPercentAt0);
 }
 
 // The number of weaken threads to get back to 0 security after grows
@@ -280,6 +290,9 @@ async function attack(ns, target, attackServersIn, round) {
     const weakenSleep = duration - target.weakenTimeAt0;
     const targetHostname = getHostname(target);
 
+    ns.tprint("Attacking [" + targetHostname + "] with h/w/g/w = "
+        + hackThreads + "/" + weakenHackThreads + "/" + growThreads + "/" + weakenGrowThreads
+        + " over " + ns.nFormat(duration, "0,0.00") + " seconds");
     // Kick off hack first
     attackServers = scheduleOn(ns, attackServers, SCRIPT_HACK, hackThreads, targetHostname, hackSleep, "hack-" + round);
 
