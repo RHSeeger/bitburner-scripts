@@ -128,7 +128,7 @@ function getWeakenTimeAt0(ns, player, server) {
  * Also sets a number of useful fields on the target servers
  */
 function getTargettingInfo(ns, targets) {
-    const player = ns.getPlayer()
+    const player = ns.getPlayer();
 
     for (let i = 0; i < targets.length; i++) {
         const target = targets[i];
@@ -136,11 +136,18 @@ function getTargettingInfo(ns, targets) {
         const server = ns.getServer(hostname);
 
         target.maxMoney = server.moneyMax;
+
+        target.hackTime = ns.formulas.basic.hackTime(server, player);
+        target.growTime = ns.formulas.basic.growTime(server, player);
+        target.weakenTime = ns.formulas.basic.weakenTime(server, player);
+
         target.hackPercentAt0 = getHackPercentAt0(ns, player, server);
         target.hackChanceAt0 = getHackChanceAt0(ns, player, server);
         target.hackTimeAt0 = getHackTimeAt0(ns, player, server);
+
         target.growPercentAt0 = getGrowPercentAt0(ns, player, server);
         target.growTimeAt0 = getGrowPercentAt0(ns, player, server);
+
         target.weakenTimeAt0 = getGrowPercentAt0(ns, player, server);
 
         target.hackScore = (target.maxMoney * target.hackChanceAt0 * target.hackPercentAt0) / target.hackTimeAt0;
@@ -179,18 +186,27 @@ function calculateHackThreads(hackPercentage, targetServer) {
 
 // The number of weaken threads to get back to 0 security after hacking
 function calculateWeakenHackThreads(hackThreads) {
-    return Math.ceil((hackThreads * HACK_SECURITY_PER_THREAD) / WEAKEN_SECURITY_PER_THREAD);
+    // We return one more than we need to, so that we reduce security a little bit faster
+    return Math.ceil(1.5 * (hackThreads * HACK_SECURITY_PER_THREAD) / WEAKEN_SECURITY_PER_THREAD);
 }
 
 // The number of grow threads we need to increase the money back to 100%
 function calculateGrowThreads(hackPercentage, targetServer) {
-    return  Math.ceil(hackPercentage / targetServer.growPercentAt0);
+    let remainingAmount = (100 - hackPercentage) * 0.01 * targetServer.maxMoney;
+    const multiplier = 1 + (targetServer.growPercentAt0 / 100);
+    let rounds = 0;
+    while (remainingAmount < targetServer.maxMoney) {
+        remainingAmount = (remainingAmount + 1) * multiplier;
+        rounds += 1;
+    }
+    return rounds;
     //return  Math.ceil(100 / targetServer.growPercentAt0);
 }
 
 // The number of weaken threads to get back to 0 security after grows
 function calculateWeakenGrowThreads(growThreads) {
-    return Math.ceil((growThreads * GROW_SECURITY_PER_THREAD) / WEAKEN_SECURITY_PER_THREAD);;
+    // We return one more than we need to, so that we reduce security a little bit faster
+    return Math.ceil(1.5 * (growThreads * GROW_SECURITY_PER_THREAD) / WEAKEN_SECURITY_PER_THREAD);;
 }
 
 /*
@@ -282,31 +298,28 @@ async function attack(ns, target, attackServersIn, round) {
     const weakenGrowThreads = calculateWeakenGrowThreads(growThreads);
 
     // How long we want each script to run for
-    const duration = Math.max(target.hackTimeAt0, target.growTimeAt0, target.weakenTimeAt0);
-    ns.tprint("Duration: " + duration);
+    const duration = Math.max(target.hackTime, target.growTime, target.weakenTime) + 0.5;
+    ns.tprint("Duration: " + duration + " seconds");
 
-    const hackSleep = duration - target.hackTimeAt0;
-    const growSleep = duration - target.growTimeAt0;
-    const weakenSleep = duration - target.weakenTimeAt0;
     const targetHostname = getHostname(target);
 
     ns.tprint("Attacking [" + targetHostname + "] with h/w/g/w = "
         + hackThreads + "/" + weakenHackThreads + "/" + growThreads + "/" + weakenGrowThreads
         + " over " + ns.nFormat(duration, "0,0.00") + " seconds");
     // Kick off hack first
-    attackServers = scheduleOn(ns, attackServers, SCRIPT_HACK, hackThreads, targetHostname, hackSleep, "hack-" + round);
+    attackServers = scheduleOn(ns, attackServers, SCRIPT_HACK, hackThreads, targetHostname, duration, "hack-" + round);
 
     // Then sleep for 0.1 sec and kick off a weaken
     await ns.sleep(100);
-    attackServers = scheduleOn(ns, attackServers, SCRIPT_WEAKEN, weakenHackThreads, targetHostname, weakenSleep, "hack-weaken-" + round);
+    attackServers = scheduleOn(ns, attackServers, SCRIPT_WEAKEN, weakenHackThreads, targetHostname, duration, "hack-weaken-" + round);
 
     // Then sleep for 0.1 sec and kick off a grow
     await ns.sleep(100);
-    attackServers = scheduleOn(ns, attackServers, SCRIPT_GROW, growThreads, targetHostname, growSleep, "grow-" + round);
+    attackServers = scheduleOn(ns, attackServers, SCRIPT_GROW, growThreads, targetHostname, duration, "grow-" + round);
 
     // Then sleep for 0.1 sec and kick off a weaken
     await ns.sleep(100);
-    attackServers = scheduleOn(ns, attackServers, SCRIPT_WEAKEN, weakenGrowThreads, targetHostname, weakenSleep, "grow-weaken-" + round);
+    attackServers = scheduleOn(ns, attackServers, SCRIPT_WEAKEN, weakenGrowThreads, targetHostname, duration, "grow-weaken-" + round);
 
 
     return attackServers;
@@ -365,6 +378,7 @@ function scheduleOn(ns, attackServersIn, jobScript, numberToRun, targetHostname,
  * - kill off ALL running scripts on non-home attack servers
  */
 async function resetScripts(ns, server) {
+    ns.print("Resetting scripts on [" + getHostname(server) + "]");
     SCRIPTS_TO_COPY.forEach((scriptName) => {
         if (!ns.fileExists(scriptName, 'home')) {
             ns.tprint("Script not found: " + scriptName);
@@ -375,9 +389,25 @@ async function resetScripts(ns, server) {
     while (SCRIPTS_TO_KILL.filter((script) => ns.scriptKill(script, hostname)).length > 0) {
         await ns.sleep(100);
     }
+    //while (SCRIPTS_TO_KILL.filter((script) => {
+    //    const val = ns.scriptKill(script, hostname);
+    //    if (val == true) {
+    //        ns.print("Killed script [" + script + "] on [" + hostname + "]: " + val);
+    //        ns.print("Is running? " + ns.scriptRunning(script, hostname));
+    //        ns.print("Processes: " + JSON.stringify(ns.ps(hostname)));
+    //        ns.ps(hostname)
+    //            .filter(process => ["weaken.ns", "hack.ns", "grow.ns"].includes(process.filename))
+    //            .forEach(process => ns.)
+    //    }
+    //    return val;
+    //}).length > 0) {
+    //    ns.print("Waiting on kill scripts on [" + hostname + "]: " + SCRIPTS_TO_KILL.join(", "));
+    //    await ns.sleep(100);
+    //}
 
     if (hostname !== "home") {
         do {
+            ns.print("Killing all scripts on [" + hostname + "]");
             ns.killall(hostname);
         } while (ns.getServerRam(hostname)[1] > 0);
         ns.scp(SCRIPTS_TO_COPY, "home", hostname);
@@ -408,6 +438,7 @@ export async function main(ns) {
     for (let i=0; i<attackServers.length; i++) {
         await resetScripts(ns, attackServers[i]);
     }
+    ns.print("Finished resetting scripts");
 
     let remainingAttackServers = copyList(attackServers);
     let remainingTargetServes = copyList(targets);

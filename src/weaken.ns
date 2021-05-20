@@ -4,15 +4,21 @@
  */
 export async function main(ns) {
     const targetHostname = ns.args[0];
-    const delay = ns.args[1] || 0;
+    const duration = ns.args[1]; // in seconds
 
-    if (!targetHostname) {
-        ns.tprint("Usage: weaken.ns [target] [delay]");
+    if (!targetHostname || !duration) {
+        ns.tprint("Usage: weaken.ns [target] [duration]");
         return;
     }
 
+    let start = Date.now(); // milliseconds since epoch
     while (true) {
-        await ns.sleep(delay + 1);
         await ns.weaken(targetHostname);
+        let now = Date.now();
+        let sleep = (duration * 1000) - (now - start);
+        if (sleep > 0) {
+            await ns.sleep(sleep);
+        }
+        start = now;
     }
 }
