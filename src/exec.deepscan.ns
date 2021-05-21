@@ -9,6 +9,8 @@
 //run deepestScan.ns
 //prints the entire tree starting from home, with clickable links and nice hierarchy formatting
 export async function main(ns) {
+    const onlyHost = ns.args[0];
+
     let configColors = ["White",	//Player-owned servers
             "DeepPink",	//Rooted faction server
             "Purple",	//Faction server
@@ -82,8 +84,12 @@ export async function main(ns) {
     //Function to create hierarchy display
     let printWithChildren = function (parent, prefixes){
         let output = "";
-        for(let i = 0; i<prefixes.length; i++) output += prefixes[i];
-        output += getFormattedServerName(parent);
+        if (!onlyHost || onlyHost === parent) {
+            for(let i = 0; i<prefixes.length; i++) {
+                output += prefixes[i];
+            }
+            output += getFormattedServerName(parent);
+        }
         for (let i = 0; i < servers.length; i++){
             if(parents[i]==parent){
                 let newPrefixes = prefixes.slice();
