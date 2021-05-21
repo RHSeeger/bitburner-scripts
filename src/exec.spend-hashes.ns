@@ -8,7 +8,7 @@ const PURCHASE_STUDY = "Improve Studying";
 
 export async function main(ns) {
     while (true) {
-        await ns.sleep(5 * 100);
+        await ns.sleep(100);
 
         const numHashes = ns.hacknet.numHashes();
         if (numHashes < (0.80 * ns.hacknet.hashCapacity())) {
@@ -20,6 +20,8 @@ export async function main(ns) {
         } else if (numHashes >= ns.hacknet.hashCost(PURCHASE_STUDY)) {
             // Wierd that this isn't happening normally. it is, but not when it should..
             // its running when hashes is much higher than it needs to be
+            // TODO: Check that we have more than som emin amount of money..
+            //       We don't want to spend money on this one until we're set in other areas
             ns.print("Spending hacknet hash: " + PURCHASE_STUDY);
             ns.hacknet.spendHashes(PURCHASE_STUDY);
         } else if (numHashes >= ns.hacknet.hashCost(PURCHASE_MONEY)) {

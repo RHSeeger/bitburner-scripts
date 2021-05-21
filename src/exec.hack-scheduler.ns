@@ -187,7 +187,7 @@ function calculateHackThreads(hackPercentage, targetServer) {
 // The number of weaken threads to get back to 0 security after hacking
 function calculateWeakenHackThreads(hackThreads) {
     // We return one more than we need to, so that we reduce security a little bit faster
-    return Math.ceil(1.5 * (hackThreads * HACK_SECURITY_PER_THREAD) / WEAKEN_SECURITY_PER_THREAD);
+    return Math.ceil(1.2 * (hackThreads * HACK_SECURITY_PER_THREAD) / WEAKEN_SECURITY_PER_THREAD);
 }
 
 // The number of grow threads we need to increase the money back to 100%
@@ -199,14 +199,15 @@ function calculateGrowThreads(hackPercentage, targetServer) {
         remainingAmount = (remainingAmount + 1) * multiplier;
         rounds += 1;
     }
-    return rounds;
+    return Math.floor(rounds * 1.1);
     //return  Math.ceil(100 / targetServer.growPercentAt0);
 }
 
 // The number of weaken threads to get back to 0 security after grows
 function calculateWeakenGrowThreads(growThreads) {
     // We return one more than we need to, so that we reduce security a little bit faster
-    return Math.ceil(1.5 * (growThreads * GROW_SECURITY_PER_THREAD) / WEAKEN_SECURITY_PER_THREAD);;
+    // There's something wrong with grow that causes it to raise security more than it should
+    return Math.ceil(1.4 * (growThreads * GROW_SECURITY_PER_THREAD) / WEAKEN_SECURITY_PER_THREAD);;
 }
 
 /*
