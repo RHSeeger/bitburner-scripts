@@ -41,16 +41,17 @@ const SCRIPT_DELAY = 1; // seconds
 const SCRIPT_WEAKEN = "weaken.ns";
 const SCRIPT_GROW = "grow.ns";
 const SCRIPT_HACK = "hack.ns";
+const SCRIPT_WEAKEN_ONCE = "weakenOnce.script";
 
 const NUM_FLEXIS_PER_WEAKEN = 6; // Normally 6
 const SCRIPTS_TO_KILL = [
-    SCRIPT_GROW, SCRIPT_HACK, SCRIPT_WEAKEN,
+    SCRIPT_GROW, SCRIPT_HACK, SCRIPT_WEAKEN, SCRIPT_WEAKEN_ONCE,
     // scripts from exec.hack-dist.ns, which will also need to be killed off if they are running
     "exec.flexihack.ns", "exec.weaken.ns"
 ];
 
 const SCRIPTS_TO_COPY = [
-    SCRIPT_GROW, SCRIPT_HACK, SCRIPT_WEAKEN,
+    SCRIPT_GROW, SCRIPT_HACK, SCRIPT_WEAKEN, SCRIPT_WEAKEN_ONCE
 ];
 
 // 10% of the home server's memory, with a minimum of 100g, is reserved to not be used by this script
@@ -152,7 +153,8 @@ function getTargettingInfo(ns, targets) {
 
         target.weakenTimeAt0 = getGrowPercentAt0(ns, player, server);
 
-        target.hackScore = (target.maxMoney * target.hackChanceAt0 * target.hackPercentAt0) / target.hackTimeAt0;
+        const duration = Math.max(target.hackTime, target.growTime, target.weakenTime);
+        target.hackScore = (target.maxMoney * target.hackChanceAt0 * target.hackPercentAt0) / duration;
     }
 
     // Return them in the order of best to worst
@@ -278,6 +280,26 @@ async function getHackPercentage(ns, target, attackServers) {
     }
 }
 
+async function weakenToMin(ns, target, attackServersIn, round) {
+    const weakenOnceSize = ns.getScriptRam(SCRIPT_HACK, "home");
+    const hostname = getHostname(target);
+    const minSecurity = ns.getServerMinSecurityLevel(hostname);
+    ns.tprint("Lowering [" + hostname + "] security from [" + ns.getServerSecurityLevel(hostname) + "] to [" + minSecurity + "]");
+
+    while (ns.getServerSecurityLevel(hostname) > minSecurity) {
+        const duration = ns.formulas.basic.weakenTime(ns.getServer(hostname), ns.getPlayer());
+        const availableMemory = attackServersIn
+                .map((server) => getHostname(server))
+                .map((hostname) => getMemoryUsable(ns, hostname))
+                .reduce((a,b) => a + b)
+            * 0.95;
+        const numThreads = availableMemory / weakenOnceSize;
+        scheduleOn(ns, attackServersIn, SCRIPT_WEAKEN_ONCE, numThreads, hostname, duration, "weakenOnce-" + round);
+        await ns.sleep(duration * 1000);
+    }
+    ns.tprint("Lowered security on [" + hostname + "] to minimum [" + ns.getServerSecurityLevel(hostname) + "]");
+}
+
 /*
  * Runs hack/weaken/grow/weaken targeting the specified server.
  * Runs as many instances as it can, up to a maximum of enough to drain 100% of the target's money each cycle
@@ -295,8 +317,10 @@ async function attack(ns, target, attackServersIn, round) {
         return [];
     }
 
-    
-
+    // Now lets bring the server down to min security before we start
+    // TODO: This takes like 30+ minutes to run at the start.. which is crazy long
+    //       Not sure what the right approach is
+    // await weakenToMin(ns, target, attackServersIn, round);
 
     const hackThreads = calculateHackThreads(hackPercentage, target);
     const weakenHackThreads = calculateWeakenHackThreads(hackThreads);
