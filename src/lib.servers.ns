@@ -43,7 +43,7 @@ export function getServerList(ns) {
 }
 
 export function getParent(server) {
-    return server[KEY_PARENT];
+    return server.hasOwnProperty(KEY_PARENT) ? server[KEY_PARENT] : null;
 }
 
 export function getServerRequiredHackingLevel(ns, server) {

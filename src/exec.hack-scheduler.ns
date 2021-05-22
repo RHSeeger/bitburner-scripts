@@ -36,6 +36,8 @@ const HACK_SECURITY_PER_THREAD = 0.002;
 const GROW_SECURITY_PER_THREAD = 0.004;
 const WEAKEN_SECURITY_PER_THREAD = 0.05; // it's actually -0.05 since it lowers it, but formulas account for that
 
+const SCRIPT_DELAY = 1; // seconds
+
 const SCRIPT_WEAKEN = "weaken.ns";
 const SCRIPT_GROW = "grow.ns";
 const SCRIPT_HACK = "hack.ns";
@@ -293,13 +295,16 @@ async function attack(ns, target, attackServersIn, round) {
         return [];
     }
 
+    
+
+
     const hackThreads = calculateHackThreads(hackPercentage, target);
     const weakenHackThreads = calculateWeakenHackThreads(hackThreads);
     const growThreads = calculateGrowThreads(hackPercentage, target);
     const weakenGrowThreads = calculateWeakenGrowThreads(growThreads);
 
     // How long we want each script to run for
-    const duration = Math.max(target.hackTime, target.growTime, target.weakenTime) + 0.5;
+    const duration = Math.max(target.hackTime, target.growTime, target.weakenTime) + (SCRIPT_DELAY * 4);
     ns.tprint("Duration: " + duration + " seconds");
 
     const targetHostname = getHostname(target);
@@ -311,15 +316,15 @@ async function attack(ns, target, attackServersIn, round) {
     attackServers = scheduleOn(ns, attackServers, SCRIPT_HACK, hackThreads, targetHostname, duration, "hack-" + round);
 
     // Then sleep for 0.1 sec and kick off a weaken
-    await ns.sleep(100);
+    await ns.sleep(SCRIPT_DELAY * 1000);
     attackServers = scheduleOn(ns, attackServers, SCRIPT_WEAKEN, weakenHackThreads, targetHostname, duration, "hack-weaken-" + round);
 
     // Then sleep for 0.1 sec and kick off a grow
-    await ns.sleep(100);
+    await ns.sleep(SCRIPT_DELAY * 1000);
     attackServers = scheduleOn(ns, attackServers, SCRIPT_GROW, growThreads, targetHostname, duration, "grow-" + round);
 
     // Then sleep for 0.1 sec and kick off a weaken
-    await ns.sleep(100);
+    await ns.sleep(SCRIPT_DELAY * 1000);
     attackServers = scheduleOn(ns, attackServers, SCRIPT_WEAKEN, weakenGrowThreads, targetHostname, duration, "grow-weaken-" + round);
 
 
