@@ -1,0 +1,55 @@
+ALL EXPERIENCE GAIN RATE
+Name 						Bonus 	Factions
+Neurotrainer I 	 	 	 	10% 	CyberSec
+Neurotrainer II 	 	 	15% 	BitRunners,NiteSec
+Neurotrainer III 	 	 	20% 	Four Sigma, NWO
+Power Recirculation Core 	10%		NWO, Tetrads, The Dark Army, The Syndicate
+Xanipher 	 	 	 	 	15%		NWO
+
+FocusWire					5%		Bachman & Associates, Clarke Incorporated, Four Sigma, KuaiGong International
+
+HACKING EXPERIENCE GAIN RATE
+Name 										Bonus 	Factions
+Artificial Synaptic Potentiation 	 	 	5% 	 	NiteSec, The Black Hand
+BitRunners Neurolink 	 	 	 	 	 	20% 	BitRunners
+CRTX42-AA Gene Modification 	 	 	 	15% 	NiteSec
+Embedded Netburner Module Core Implant 	 	7% 	 	BitRunners, Blade Industries, ECorp, Fulcrum Secret Technologies, MegaCorp, NWO, The Black Hand
+Embedded Netburner Module Core V2 Upgrade 	15% 	BitRunners, Blade Industries, ECorp, Fulcrum Secret Technologies, KuaiGong International, MegaCorp, NWO, OmniTek Incorporated
+Embedded Netburner Module Core V3 Upgrade 	25% 	Daedalus, ECorp, Fulcrum Secret Technologies, Illuminati, MegaCorp, NWO, The Covenant
+Enhanced Myelin Sheathing 	 	 	 	 	10% 	BitRunners, Fulcrum Secret Technologies, The Black Hand
+Neural Accelerator 	 	 	 	 	 	 	15% 	BitRunners
+Neural-Retention Enhancement 	 	 	 	25% 	NiteSec
+Neuralstimulator 	 	 	 	 	 	 	12% 	Aevum, Bachman & Associates, Chongqing, Clarke Incorporated, Four Sigma, Ishima, New Tokyo, Sector-12, The Black Hand, Volhaven
+Neuregen Gene Modification 	 	 	 	 	40% 	Chongqing
+
+Neuronal Densification 	 	 	 	 	 	10% 	Clarke Incorporated
+OmniTek InfoLoad 	 	 	 	 	 	 	25% 	OmniTek Incorporated
+
+HACKING MULTIPLIER
+
+Artificial Bio-neural Network Implant 	 	 	 	1.12
+BitRunners Neurolink 	 	 	 	 	 	 	 	1.15
+BitWire 	 	 	 	 	 	 	 	  	 		1.05
+CRTX42-AA Gene Modification 	 	 	 	 	 	1.08
+Cranial Signal Processors - Gen I 	 	  	 		1.05
+Cranial Signal Processors - Gen II 	 	  	 		1.07
+Cranial Signal Processors - Gen III 	  	 		1.09
+Cranial Signal Processors - Gen V 	 	 	 	 	1.3
+Embedded Netburner Module 	 	 	 	  	 		1.08
+Embedded Netburner Module Core Implant 	  	 		1.07
+Embedded Netburner Module Core V2 Upgrade  	 		1.08
+Embedded Netburner Module Core V3 Upgrade  	 		1.1
+Enhanced Myelin Sheathing 	 	 	 	  	 		1.08
+Neural Accelerator 	 	 	 	 	 	 	 	 	1.1
+Power Recirculation Core 	 	 	 	  	 		1.05
+The Black Hand 	 	 	 	 	 	 	 	 	 	1.1
+Xanipher 	 	 	 	 	 	 	 	 	 	 	1.2
+
+Neuronal Densification 	 	 	 	 	 	 	 	1.15 	Clarke Incorporated
+nextSENS Gene Modification 	 	 	 	 	 	 	1.2 	Clarke Incorporated
+OmniTek InfoLoad 	 	 	 	 	 	 	 	 	1.2		OmniTek Incorporated
+PC Direct-Neural Interface 	 	 	 	 	 	 	1.08 	Blade Industries, ECorp, Four Sigma, OmniTek Incorporated
+PC Direct-Neural Interface NeuroNet Injector 	 	1.1 	Fulcrum Secret Technologies
+PC Direct-Neural Interface Optimization Submodule 	1.1 	Blade Industries, ECorp, Fulcrum Secret Technologies
+QLink 	 	 	 	 	 	 	 	 	 	 	 	1.75 	Illuminati
+SPTN-97 Gene Modification 	 	 	 	 	 	 	1.15 	The Covenant

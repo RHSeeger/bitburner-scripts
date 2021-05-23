@@ -177,7 +177,7 @@ function getMemoryUsable(ns, hostname) {
         let reserved = Math.max(HOME_RESERVED_MEMORY, HOME_RESERVED_FRACTION * totalMemory);
         memory -= reserved;
     } else if (hostname.startsWith("hacknet-")) {
-        return Math.max(0, maxRam - HACKNET_RESERVED_MEMORY);
+        memory = Math.max(0, memory - HACKNET_RESERVED_MEMORY);
     }
 
     return memory;
@@ -373,7 +373,7 @@ function scheduleOn(ns, attackServersIn, jobScript, numberToRun, targetHostname,
         const server = attackServers[0];
         const attackerHostname = getHostname(server);
         const memoryAvailable = getMemoryUsable(ns, attackerHostname);
-        //ns.tprint("Memory available on [" + attackerHostname + "]: " + memoryAvailable);
+        // ns.tprint("Memory available on [" + attackerHostname + "]: " + memoryAvailable);
 
         // Schedule as many threads of the task as possible on the first host.
         const threadsOnThisHost = Math.min(Math.floor(memoryAvailable / ramPerTask), numberToRun);
@@ -388,6 +388,7 @@ function scheduleOn(ns, attackServersIn, jobScript, numberToRun, targetHostname,
                 // ran successfully
             } else {
                 ns.tprint("Unable to run: " + JSON.stringify(argList));
+                ns.exit();
             }
         }
 
@@ -446,6 +447,10 @@ async function resetScripts(ns, server) {
 
 
 export async function main(ns) {
+
+    [ SCRIPT_WEAKEN, SCRIPT_GROW, SCRIPT_HACK, SCRIPT_WEAKEN_ONCE].forEach(scriptName => {
+        ns.tprint("Size: [" + scriptName + "]: " + ns.getScriptRam(scriptName));
+    });
 
     const servers = getServerList(ns);
 
