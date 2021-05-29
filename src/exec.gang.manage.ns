@@ -44,6 +44,7 @@ let memberNamePool = [
 ];
 
 // TODO: Replace these with FLAG_* to make it clearer in the code
+const FLAG_ASCEND = 'ascend';
 const FLAGS = [
     ['focused', false],
     ['buyAll', false],
@@ -54,12 +55,15 @@ const FLAGS = [
     ['buyRoot', false],
     ['buyAug', false],
     ['buyBat', true],
+    [FLAG_ASCEND, true],
     ['c', 0.6], // Minimum acceptable combat win level
     ['asc', 600000] // Ascension cycles
 ];
 
 const ASCEND_CYCLES = 1000; // The number of times to ascend a gang member each time we ascend
 const ASCENSION_MULTIPLIER_LIMIT = 25; // ascension multiplier limit (beyond which we won't ascend)
+
+const STATS_TRAIN_TARGET = 50; // Below this, train
 
 const TASK_UNASSIGNED = 'Unassigned';
 const TASK_MUG = 'Mug People';
@@ -106,30 +110,72 @@ const ALL_TASKS = [
 const TERRITORY_TASKED_PERCENT = 25;
 
 /*
- * Returns the best member to ascend at this time, the one with lowest multipliers
- * If all members are above the limit to ascend, returns null
+ * Determines the current max multiplier that should be targeted
+ * Starts at 10x
+ * When 5 members have that amount, moves up to 100x
+ * Then repeat to 1000x
+ * Doesn't go above that
+ */
+function determineAsecensionLimit(ns) {
+    const members = ns.gang.getMemberNames();
+
+    // Get the member with the lowest str asc xp multiplier, of the top 5
+    const lowest = members
+        .map(member => ns.gang.getMemberInformation(member))
+        .sort((a, b) => b.str_asc_mult - a.str_asc_mult) // We only care about Strength because we're using the bat to ascend
+        .splice(0, 5)
+        .reduce((a, b) => a.str_asc_mult < b.str_asc_mult ? a : b);
+    ns.print("Lowest of top 5 is: " + JSON.stringify(lowest));
+    if (lowest.str_asc_mult < 10) {
+        return 10;
+    } else if (lowest.str_asc_mult < 100) {
+        return 100;
+    } else {
+        return 1000;
+    }
+}
+
+/*
+ * Returns the best member to ascend at this time
+ *
+ * We try to max 5 members
+ * Find the 5 members with the highest str asc multiplier
+ * Find the member with the lowest respect, of those 5
+ * If that member is above the str asc multiplier cap, there's nothing to ascend
+ * Otherwise, ascend that character
+ *
  */
 function determineBestMemberToAscend(ns) {
     const members = ns.gang.getMemberNames();
-    const sortedValidMembers = members
-        .map(member => ns.gang.getMemberInformation(member))
-        .filter(memberInfo => memberInfo.str_asc_mult < ASCENSION_MULTIPLIER_LIMIT)
-        .sort((a, b) => a.str_asc_mult - b.str_asc_mult) // We only care about Strength because we're using the bat to ascend
-        .map(memberInfo => memberInfo.name);
-
-    if (sortedValidMembers.length <= 0) {
+    if (members.length < 15) {
+        // don't bother to ascend until getting 15 members
         return null;
     }
 
-    return sortedValidMembers[0];
+    const multiplierLimit = determineAsecensionLimit(ns);
+
+    const topFiveByMult = members
+        .map(member => ns.gang.getMemberInformation(member))
+        .sort((a, b) => b.str_asc_mult - a.str_asc_mult)
+        .splice(0, 5);
+    const lowestByRespect = topFiveByMult
+        .sort((a, b) => a.earnedRespect - b.earnedRespect)
+        [0];
+    if (lowestByRespect.str_asc_mult > multiplierLimit) {
+        //ns.print("Member [" + lowestByRespect.name + "] is above limit, not ascending anyone");
+        return null;
+    }
+
+    //console.log("Best", lowestByRespect);
+    return lowestByRespect.name;
 }
 
-// TODO: Handle hacking gangs stat limit too
 async function ascendMember(ns, memberName) {
+    const limit = determineAsecensionLimit(ns);
     let i;
     for (i = 0; i < ASCEND_CYCLES; i++) {
         const memberInfo = ns.gang.getMemberInformation(memberName);
-        if (memberInfo.str_asc_mult >= ASCENSION_MULTIPLIER_LIMIT) {
+        if (memberInfo.str_asc_mult >= limit) {
             ns.print("Member [" + memberName + "] has surpassed multiplier limits (after " + i + " ascensions)")
             return;
         }
@@ -197,6 +243,26 @@ function buyEquipment(ns, member, buyableEquipment) {
     return didBuy;
 }
 
+function canTerrorism(memberInfo) {
+    const abilities = memberInfo.hack + memberInfo.str + memberInfo.def + memberInfo.dex + memberInfo.cha;
+    return abilities > 630;
+}
+
+function canTrafficArms(memberInfo) {
+    const abilities = memberInfo.hack + memberInfo.str + memberInfo.def + memberInfo.dex + memberInfo.cha;
+    return abilities > 800;
+}
+
+function canTaskStrongArm(memberInfo) {
+    const abilities = memberInfo.str;
+    return abilities > 120;
+}
+
+function canMug(memberInfo) {
+    const abilities = memberInfo.str;
+    return abilities > 30;
+}
+
 
 export async function main(ns) {
     ns.disableLog('ALL');
@@ -217,7 +283,14 @@ export async function main(ns) {
 
     var buyAug = buyAll || flagValues["buyAug"];
 
+    const shouldAscendMembers = flagValues[FLAG_ASCEND];
+
     var myGang = ns.gang.getGangInformation();
+
+    if (myGang.isHacking) {
+        ns.tprint("Error: Script does not support hacking gangs");
+        ns.exit();
+    }
 
     // Confirm that all the tasks we think we know... exist
     var possibleTasks = ns.gang.getTaskNames();
@@ -234,30 +307,21 @@ export async function main(ns) {
     let trainingTasks = [ TASK_TRAIN_COMBAT, TASK_TRAIN_HACKING, TASK_TRAIN_CHARISMA ];
     var wantedLevelLowerTask = TASK_VIGILANTE;
 
+
+    wantedLevelLowerTask = TASK_VIGILANTE;
+
+    trainingTasks = [ TASK_TRAIN_COMBAT, TASK_TRAIN_CHARISMA ];
+
     var desirableAugs = [];
+    desirableAugs.push("Bionic Arms");
+    desirableAugs.push("Bionic Legs");
+    desirableAugs.push("Bionic Spine");
+    desirableAugs.push("BrachiBlades");
+    desirableAugs.push("Nanofiber Weave");
+    desirableAugs.push("Synthetic Heart");
+    desirableAugs.push("Synfibril Muscle");
+    desirableAugs.push("Graphene Bone Lacings");
 
-    if(myGang.isHacking) {
-        wantedLevelLowerTask = TASK_ETHICAL_HACKING;
-
-        trainingTasks = [ TASK_TRAIN_HACKING, TASK_TRAIN_CHARISMA ];
-
-        desirableAugs.push("BitWire");
-        desirableAugs.push("Neuralstimulator");
-        desirableAugs.push("DataJack");
-    } else {
-        wantedLevelLowerTask = TASK_VIGILANTE;
-
-        trainingTasks = [ TASK_TRAIN_COMBAT, TASK_TRAIN_CHARISMA ];
-
-        desirableAugs.push("Bionic Arms");
-        desirableAugs.push("Bionic Legs");
-        desirableAugs.push("Bionic Spine");
-        desirableAugs.push("BrachiBlades");
-        desirableAugs.push("Nanofiber Weave");
-        desirableAugs.push("Synthetic Heart");
-        desirableAugs.push("Synfibril Muscle");
-        desirableAugs.push("Graphene Bone Lacings");
-    }
 
 
     var ascensionCycles = flagValues["asc"];
@@ -279,6 +343,12 @@ export async function main(ns) {
         otherGangNames.push(gangName);
         //ns.tprint(gangName);
     }
+
+    // -- Setup Complete --
+
+    ns.print("Multiplier: " + determineAsecensionLimit(ns));
+    ns.print("Best member: " + determineBestMemberToAscend(ns));
+
 
     while (true) {
         myGang = ns.gang.getGangInformation();
@@ -306,16 +376,18 @@ export async function main(ns) {
         }
 
         // -- Handle ascensions --
-        const batCost = ns.gang.getEquipmentCost('Baseball Bat');
-        if (!batCost) {
-            ns.tprint("Unable to determine cost of bat");
-            ns.exit();
-        }
-        if (ns.getServerMoneyAvailable("home") > ((batCost * ASCEND_CYCLES) * 2)) {
-            const memberToAscend = determineBestMemberToAscend(ns);
-            if (memberToAscend != null) {
-                ns.print("Found best member to ascend: " + memberToAscend);
-                await ascendMember(ns, memberToAscend);
+        if (false && shouldAscendMembers) {
+            const batCost = ns.gang.getEquipmentCost('Baseball Bat');
+            if (!batCost) {
+                ns.tprint("Unable to determine cost of bat");
+                ns.exit();
+            }
+            if (ns.getServerMoneyAvailable("home") > ((batCost * ASCEND_CYCLES) * 2)) {
+                const memberToAscend = determineBestMemberToAscend(ns);
+                if (memberToAscend != null) {
+                    ns.print("Found best member to ascend: " + memberToAscend);
+                    await ascendMember(ns, memberToAscend);
+                }
             }
         }
 
@@ -325,45 +397,111 @@ export async function main(ns) {
         members.forEach(member => buyEquipment(ns, member, buyableEquipment));
 
         // -- Assign Tasks --
-        let numTerritoryTasked = 0;
-        const totalMembers = members.length;
-        const desiredTerritoryWorkers = myGang.isHacking
-            ? 0
-            : Math.floor(totalMembers * TERRITORY_TASKED_PERCENT / 100);
+        /*
+         * Assign all members below the level of min-stats, then train
+         * If there are no members training (because of that ^), set one member to training (the one with the lowest stats)
+         * For each member
+         * - If wanted > 1 and wantedLevelGainRate > 0, then assign member to reduce wanted level
+         * - If territory warfare members < TERRITORY_TASKED_PERCENT, assign to warfare
+         * - If member can terrorism and traffic arms, pick whichever we have less of
+         * - If member can terrorism OR traffic arms, do the one it can
+         * - If member can strongarm, do that
+         * - If member can mug, do that
+         * - Otherwise, train
+         * Lastly, if territory warfare change is < required, turn if off and reassign members from warfare to training
+         *
+         * NOTE: We're skipping territorial warfare atm because we can do that manually
+         *
+         * TODO: This needs more work because it winds up leaving wanted level increasing
+         *       Would it work to add vigilantees as we add workers?
+         */
 
-        while (members.length > 0) {
-            var task = "";
-            const member = members.pop();
-            const memInfo = ns.gang.getMemberInformation(member);
+        const memberNames = ns.gang.getMemberNames();
+        // Reset all members to doing nothing
+        memberNames.forEach(member => ns.gang.setMemberTask(member, TASK_UNASSIGNED));
 
-            let statsTarget = 50;
+        // For each member below <training level> strength, set them to training
+        let anyTraining = false;
+        memberNames
+            .map(member => ns.gang.getMemberInformation(member))
+            .filter(memberInfo => memberInfo.task === TASK_UNASSIGNED)
+            .forEach(memberInfo => {
+                if (memberInfo.strength < STATS_TRAIN_TARGET) {
+                    ns.gang.setMemberTask(memberInfo.name, TASK_TRAIN_COMBAT);
+                    anyTraining = true;
+                }
+            });
 
-            myGang = ns.gang.getGangInformation();
-
-            let reduceWanted = myGang.wantedLevel > 1;
-            if(balanceTasks) {
-                reduceWanted |= myGang.wantedLevelGainRate > 0;
-            }
-
-            if((myGang.isHacking && memInfo.hacking < statsTarget) ||
-                (!myGang.isHacking && memInfo.strength < statsTarget && memInfo.agility < statsTarget && memInfo.charisma < statsTarget && memInfo.defense < statsTarget)) {
-                // TRAINING
-                task = trainingTasks[getRandomInt(trainingTasks.length)];
-            } else if (numTerritoryTasked < desiredTerritoryWorkers) {
-                // TERRITORY
-                task = TASK_TERRITORY_WARFARE;
-              numTerritoryTasked += 1;
-            } else if (reduceWanted) {
-                // WANTED
-                task = wantedLevelLowerTask;
-            } else {
-                // OTHER
-                // TODO: This should really be based on what they can do well based on stats
-                task = possibleTasks[getRandomInt(possibleTasks.length) - 1];
-            }
-
-            ns.gang.setMemberTask(member, task);
+        // If there are no members training, set the one with the lowest str to train
+        // Make sure it's not one of the top 5
+        if (!anyTraining) {
+            const memberToTrain = memberNames
+                .map(member => ns.gang.getMemberInformation(member))
+                .sort((a, b) => b.str_asc_mult - a.str_asc_mult)
+                .splice(5, memberNames.length - 5)
+                .filter(memberInfo => memberInfo.task === TASK_UNASSIGNED)
+                .sort((a, b) => a.str_exp - b.str_exp)
+                [0];
+            ns.gang.setMemberTask(memberToTrain.name, TASK_TRAIN_COMBAT);
         }
+
+        // Assign as many as necessary to bring down wanted
+        // We have to refetch it each time here, because the assigned jobs will change it
+        // TODO: this still isn't working... it's flipflopping between everyone vigilante, and nobody
+        if (myGang.wantedLevel > 1) {
+            // Use everyone
+            memberNames
+                .map(member => ns.gang.getMemberInformation(member))
+                .filter(memberInfo => memberInfo.task === TASK_UNASSIGNED)
+                .forEach(memberInfo => ns.gang.setMemberTask(memberInfo.name, TASK_VIGILANTE));
+        } else if (ns.gang.getGangInformation().wantedLevelGainRate > 0) {
+            // Use enough to bring gain rate below 0
+            const available = memberNames
+                .map(member => ns.gang.getMemberInformation(member))
+                .filter(memberInfo => memberInfo.task === TASK_UNASSIGNED);
+            while (ns.gang.getGangInformation().wantedLevelGainRate > 0 && available.length > 0) {
+                const currentMemberInfo = available.shift();
+                ns.gang.setMemberTask(currentMemberInfo.name, TASK_VIGILANTE);
+            }
+        }
+
+        // Choose the right active task for everyone left
+        // If member can terrorism and traffic arms, pick whichever we have less of
+        // If member can terrorism OR traffic arms, do the one it can
+        // If member can strongarm, do that
+        // If member can mug, do that
+        // Otherwise, train
+        let taskCounts = {
+            [TASK_TERRORISM]: 0,
+            [TASK_TRAFFICK_ARMS]: 0
+        };
+
+        memberNames
+            .map(member => ns.gang.getMemberInformation(member))
+            .filter(memberInfo => memberInfo.task === TASK_UNASSIGNED)
+            .forEach(memberInfo => {
+                if (ns.gang.getGangInformation().wantedLevelGainRate > 0) {
+                    ns.gang.setMemberTask(memberInfo.name, TASK_VIGILANTE);
+                } else if (canTerrorism(memberInfo) && canTrafficArms(memberInfo)) {
+                    const task = taskCounts[TASK_TERRORISM] < taskCounts[TASK_TRAFFICK_ARMS]
+                        ? TASK_TERRORISM : TASK_TRAFFICK_ARMS;
+                    ns.gang.setMemberTask(memberInfo.name, task);
+                    taskCounts[task] += 1;
+                } else if (canTerrorism(memberInfo)) {
+                    ns.gang.setMemberTask(memberInfo.name, TASK_TERRORISM);
+                    taskCounts[TASK_TERRORISM] += 1;
+                } else if (canTrafficArms(memberInfo)) {
+                    ns.gang.setMemberTask(memberInfo.name, TASK_TRAFFICK_ARMS);
+                    taskCounts[TASK_TRAFFICK_ARMS] += 1;
+                } else if (canTaskStrongArm(memberInfo)) {
+                    ns.gang.setMemberTask(memberInfo.name, TASK_STRONGARM);
+                } else if (canMug(memberInfo)) {
+                    ns.gang.setMemberTask(memberInfo.name, TASK_MUG);
+                } else {
+                    ns.gang.setMemberTask(memberInfo.name, TASK_TRAIN_COMBAT);
+                }
+            });
+
 
         await ns.sleep(cycleMs);
         nextAscensionAttempt -= cycleMs;
