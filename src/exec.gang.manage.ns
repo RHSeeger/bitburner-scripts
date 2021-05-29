@@ -1,355 +1,371 @@
 /*
  * Executable: exec.gang.manage.ns
  *
- * From: https://github.com/moriakaice/bitburner/blob/master/src/gangManager.ns
- *
- * I don't like this... it doesn't ascend multiple times in a row
- * Plus it doesn't seem to make any money with my guys
- *
+ * From: https://github.com/Penndrageist/bitburner-scripts/blob/master/scripts/gangManager.js.js
  */
-const settings = {
-    keys: {
-        buyEquipment: 'BB_BUY_EQUIPMENT',
-        doAscension: 'BB_DO_ASCENSION',
-        strAscMultHardLimit: 'BB_STR_ASC_MULT_HARD_LIMIT',
-        equipmentList: 'BB_EQUIPMENT_LIST',
-        augumentationList: 'BB_AUGUMENTATION_LIST',
-        initialized: 'BB_GANGS_INITIALIZED'
-    }
-};
 
-function getItem(key) {
-    let item = localStorage.getItem(key);
-
-    return item ? JSON.parse(item) : undefined;
+function getRandomInt(max) {
+    return Math.floor(Math.random() * Math.floor(max));
 }
 
-function setItem(key, value) {
-    localStorage.setItem(key, JSON.stringify(value));
-}
-
-const gangMemberNamesList = [
-    'Darth Vader',
-    'Joker',
-    'Two-Face',
-    'Warden Norton',
-    'Hannibal Lecter',
-    'Sauron',
-    'Bane',
-    'Tyler Durden',
-    'Agent Smith',
-    'Gollum',
-    'Vincent Vega',
-    'Saruman',
-    'Loki',
-    'Vito Corleone',
-    'Balrog',
-    'Palpatine',
-    'Michael Corleone',
-    'Talia al Ghul',
-    'John Doe',
-    'Scarecrow',
-    'Commodus',
-    'Jabba the Hutt',
-    'Scar',
-    'Grand Moff Tarkin',
-    'Boba Fett',
-    'Thanos',
-    'Terminator',
-    'Frank Costello',
-    'Hector Barbossa',
-    'Xenomorph',
+// 30 possible gang members
+// create list of names
+let memberNamePool = [
+    "Thor",           // 1
+    "Iron Man",       // 2
+    "Starlord",       // 3
+    "Thanos",         // 4
+    "Groot",          // 5
+    "Ant-Man",        // 6
+    "Wasp",           // 7
+    "Spiderman",      // 8
+    "Loki",           // 9
+    "Gamora",         // 10
+    "Rocket Raccoon", // 11
+    "T'Challa",       // 12
+    "Vision",         // 13
+    "Scarlet Witch",  // 14
+    "Winter Soldier", // 15
+    "Black Widow",    // 16
+    "Hulk",           // 17
+    "Bruce Banner",   // 18
+    "Hawkeye",        // 19
+    "Captain Marvel", // 20
+    "War Machine",    // 21
+    "Nick Fury",      // 22
+    "Nebula",         // 23
+    "Drax",           // 24
+    "Deadpool",       // 25
+    "Cable",          // 26
+    "Quicksilver",    // 27
+    "Wolverine",      // 28
+    "Adam Warlock",   // 29
+    "Yondu",          // 30
 ];
 
-const equipmentTypes = ['Weapon', 'Armor', 'Vehicle', 'Rootkit', 'Augmentation'];
+// TODO: Replace these with FLAG_* to make it clearer in the code
+const FLAGS = [
+    ['focused', false],
+    ['buyAll', false],
+    ['buyEquip', false],
+    ['buyWeapon', false],
+    ['buyArmor', false],
+    ['buyVehicle', false],
+    ['buyRoot', false],
+    ['buyAug', false],
+    ['buyBat', true],
+    ['c', 0.6], // Minimum acceptable combat win level
+    ['asc', 600000] // Ascension cycles
+];
 
-function localeHHMMSS(ms = 0) {
-    if (!ms) {
-        ms = new Date().getTime();
+const ASCEND_CYCLES = 1000; // The number of times to ascend a gang member each time we ascend
+const ASCENSION_MULTIPLIER_LIMIT = 25; // ascension multiplier limit (beyond which we won't ascend)
+
+const TASK_UNASSIGNED = 'Unassigned';
+const TASK_MUG = 'Mug People';
+const TASK_DEAL_DRUGS = 'Deal Drugs';
+const TASK_STRONGARM = 'Strongarm Civilians';
+const TASK_RUN_CON = 'Run a Con';
+const TASK_ARMED_ROBBERY = 'Armed Robbery';
+const TASK_TRAFFICK_ARMS = 'Traffick Illegal Arms';
+const TASK_BLACKMAIL = 'Threaten & Blackmail';
+const TASK_TRAFFICK_HUMANS = 'Human Trafficking';
+const TASK_TERRORISM = 'Terrorism';
+const TASK_VIGILANTE = 'Vigilante Justice';
+const TASK_TRAIN_COMBAT = 'Train Combat';
+const TASK_TRAIN_HACKING = 'Train Hacking';
+const TASK_TRAIN_CHARISMA = 'Train Charisma';
+const TASK_TERRITORY_WARFARE = 'Territory Warfare';
+const TASK_RANSOMWARE = "Ransomware";
+const TASK_PHISHING = "Phishing";
+const TASK_IDENTITY_THEFT = "Identity Theft";
+const TASK_DDOS = "DDoS Attacks";
+const TASK_VIRUS = "Plant Virus";
+const TASK_FRAUD = "Fraud & Counterfeiting";
+const TASK_MONEY_LAUNDER = "Money Laundering";
+const TASK_CYBERTERRORISM = "Cyberterrorism";
+const TASK_ETHICAL_HACKING = "Ethical Hacking";
+
+const TASKS_COMBAT = [
+    TASK_MUG, TASK_DEAL_DRUGS, TASK_STRONGARM, TASK_RUN_CON, TASK_ARMED_ROBBERY,
+    TASK_TRAFFICK_ARMS, TASK_BLACKMAIL, TASK_TRAFFICK_HUMANS, TASK_TERRORISM,
+    TASK_VIGILANTE
+];
+const TASKS_HACKING = [
+    TASK_RANSOMWARE, TASK_PHISHING, TASK_IDENTITY_THEFT, TASK_DDOS, TASK_VIRUS,
+    TASK_FRAUD, TASK_MONEY_LAUNDER, TASK_CYBERTERRORISM,
+    TASK_ETHICAL_HACKING
+];
+const ALL_TASKS = [
+    TASK_UNASSIGNED,
+    ...TASKS_COMBAT,
+    ...TASKS_HACKING,
+    TASK_TRAIN_COMBAT, TASK_TRAIN_HACKING, TASK_TRAIN_CHARISMA,
+    TASK_TERRITORY_WARFARE
+];
+const TERRITORY_TASKED_PERCENT = 25;
+
+/*
+ * Returns the best member to ascend at this time, the one with lowest multipliers
+ * If all members are above the limit to ascend, returns null
+ */
+function determineBestMemberToAscend(ns) {
+    const members = ns.gang.getMemberNames();
+    const sortedValidMembers = members
+        .map(member => ns.gang.getMemberInformation(member))
+        .filter(memberInfo => memberInfo.str_asc_mult < ASCENSION_MULTIPLIER_LIMIT)
+        .sort((a, b) => a.str_asc_mult - b.str_asc_mult) // We only care about Strength because we're using the bat to ascend
+        .map(memberInfo => memberInfo.name);
+
+    if (sortedValidMembers.length <= 0) {
+        return null;
     }
 
-    return new Date(ms).toLocaleTimeString();
+    return sortedValidMembers[0];
 }
 
-function getMyGangInformation(ns) {
-    return ns.gang.getGangInformation();
-}
-
-function getMemberNames(ns) {
-    return ns.gang.getMemberNames();
-}
-
-function getMemberInformation(ns, name) {
-    return ns.gang.getMemberInformation(name);
-}
-
-function getMemberAbilities(ns, name) {
-    const gangMemberInfo = getMemberInformation(ns, name);
-    const terrorismAbilities = gangMemberInfo.hack + gangMemberInfo.str + gangMemberInfo.def + gangMemberInfo.dex + gangMemberInfo.cha;
-    const vigilantieAbilities = gangMemberInfo.hack + gangMemberInfo.str + gangMemberInfo.def + gangMemberInfo.dex + gangMemberInfo.agi;
-
-    return { terrorismAbilities, vigilantieAbilities, str: gangMemberInfo.str };
-}
-
-const SORT_TYPES = {
-    VIGILANTIE: 'Vigilantie',
-    TERRORISM: 'Terrorism',
-    REPUTATION: 'Reputation',
-    STR: 'Strength',
-    STR_MULT: 'Strength Multiplier',
-    STR_ASC_MULT: 'Strength Ascencion Multiplier'
-};
-
-const DIRECTIONS = {
-    ASC: 'Ascending',
-    DESC: 'Descending'
-};
-
-function sortBy(ns, sortType = null, direction = DIRECTIONS.ASC) {
-    return function (a, b) {
-        const memberInfoA = getMemberInformation(ns, a);
-        const memberInfoB = getMemberInformation(ns, b);
-
-        let statA;
-        let statB;
-
-        if (sortType === SORT_TYPES.VIGILANTIE) {
-            statA = memberInfoA.hack + memberInfoA.str + memberInfoA.def + memberInfoA.dex + memberInfoA.agi;
-            statB = memberInfoB.hack + memberInfoB.str + memberInfoB.def + memberInfoB.dex + memberInfoB.agi;
-        } else if (sortType === SORT_TYPES.TERRORISM) {
-            statA = memberInfoA.hack + memberInfoA.str + memberInfoA.def + memberInfoA.dex + memberInfoA.cha;
-            statB = memberInfoB.hack + memberInfoB.str + memberInfoB.def + memberInfoB.dex + memberInfoB.cha;
-        } else if (sortType === SORT_TYPES.REPUTATION) {
-            statA = memberInfoA.earnedRespect;
-            statB = memberInfoB.earnedRespect;
-        } else if (sortType === SORT_TYPES.STR) {
-            statA = memberInfoA.str;
-            statB = memberInfoB.str;
-        } else if (sortType === SORT_TYPES.STR_MULT) {
-            statA = memberInfoA.str_mult;
-            statB = memberInfoB.str_mult;
-        } else if (sortType === SORT_TYPES.STR_ASC_MULT) {
-            statA = memberInfoA.str_asc_mult;
-            statB = memberInfoB.str_asc_mult;
-        } else {
-            const indexA = gangMemberNamesList.findIndex((name) => name === memberInfoA.name);
-            const indexB = gangMemberNamesList.findIndex((name) => name === memberInfoB.name);
-
-            return indexA - indexB;
+// TODO: Handle hacking gangs stat limit too
+async function ascendMember(ns, memberName) {
+    let i;
+    for (i = 0; i < ASCEND_CYCLES; i++) {
+        const memberInfo = ns.gang.getMemberInformation(memberName);
+        if (memberInfo.str_asc_mult >= ASCENSION_MULTIPLIER_LIMIT) {
+            ns.print("Member [" + memberName + "] has surpassed multiplier limits (after " + i + " ascensions)")
+            return;
         }
-
-        if (statA === statB) {
-            return 0;
+        if (!memberInfo.upgrades.includes('Baseball Bat')) {
+            ns.gang.purchaseEquipment(memberName, 'Baseball Bat');
         }
-
-        if (direction === DIRECTIONS.ASC) {
-            return statA - statB;
-        } else {
-            return statB - statA;
+        ns.gang.ascendMember(memberName);
+        if (i % 100 === 0) {
+            ns.sleep(1);
         }
     }
+
+    ns.print("Ascended [" + memberName + "] " + i + " times");
 }
+
+function buyEquipment(ns, member, buyableEquipment) {
+    // TODO: figure this out later... we don't want to buy equipment unless the char is already maxed out
+    return;
+    let didBuy = false;
+
+    const memInfo = ns.gang.getMemberInformation(member);
+
+    //ns.gang.setMemberTask(m, TASK_UNASSIGNED);
+
+    buyableEquipment.forEach((equipment) => {
+        if (memInfo.upgrades.includes(equipment)) {
+            return;
+        }
+        if (memInfo.augmentations.includes(equipment)) {
+            return;
+        }
+
+        var type = ns.gang.getEquipmentType(equipment);
+        switch (type) {
+            case "Weapon":
+                if (buyWeapon) {
+                    didBuy |= ns.gang.purchaseEquipment(member, equipment);
+                }
+                break;
+            case "Armor":
+                if (buyArmor) {
+                    didBuy |= ns.gang.purchaseEquipment(member, equipment);
+                }
+                break;
+            case "Vehicle":
+                if (buyVehicle) {
+                    didBuy |= ns.gang.purchaseEquipment(member, equipment);
+                }
+                break;
+            case "Rootkit":
+                if (buyRoot) {
+                    didBuy |= ns.gang.purchaseEquipment(member, equipment);
+                }
+                break;
+            case "Augmentation":
+                if (buyAug) {
+                    didBuy |= ns.gang.purchaseEquipment(member, equipment);
+                }
+                break;
+            default:
+                break;
+        }
+    });
+
+    return didBuy;
+}
+
 
 export async function main(ns) {
     ns.disableLog('ALL');
-    if (getItem(settings.keys.initialized) !== true) {
-        ns.tprint("Please run exec.gang.initialize.ns to initialize settings");
+
+    var flagValues = ns.flags(FLAGS);
+
+    var balanceTasks = !flagValues['focused'];
+    var minCombatWinLevel = Math.min(flagValues['c'], 1.0);
+
+    var buyAll = flagValues['buyAll'];
+
+    var buyEquip = buyAll || flagValues["buyEquip"];
+
+    var buyWeapon = buyAll || buyEquip || flagValues["buyWeapon"];
+    var buyArmor = buyAll || buyEquip || flagValues["buyArmor"];
+    var buyVehicle = buyAll || buyEquip || flagValues["buyVehicle"];
+    var buyRoot = buyAll || buyEquip || flagValues["buyRoot"];
+
+    var buyAug = buyAll || flagValues["buyAug"];
+
+    var myGang = ns.gang.getGangInformation();
+
+    // Confirm that all the tasks we think we know... exist
+    var possibleTasks = ns.gang.getTaskNames();
+    ns.print(`All Tasks: ${possibleTasks}`);
+    const invalidTasks = ALL_TASKS
+        .filter(task => !(myGang.isHacking ? TASKS_COMBAT : TASKS_HACKING).includes(task))
+        .filter(task => !possibleTasks.includes(task));
+    if (invalidTasks.length > 0) {
+        ns.tprint("The following tasks were not recognized: " + invalidTasks.join(", "));
         return;
     }
-    ns.tprint(`[${localeHHMMSS()}] Starting gang manager`);
 
-    let hostname = ns.getHostname();
+    var territoryTask = TASK_TERRITORY_WARFARE;
+    let trainingTasks = [ TASK_TRAIN_COMBAT, TASK_TRAIN_HACKING, TASK_TRAIN_CHARISMA ];
+    var wantedLevelLowerTask = TASK_VIGILANTE;
 
-    if (hostname !== 'home') {
-        ns.tprint("Run the script from home");
-        return;
+    var desirableAugs = [];
+
+    if(myGang.isHacking) {
+        wantedLevelLowerTask = TASK_ETHICAL_HACKING;
+
+        trainingTasks = [ TASK_TRAIN_HACKING, TASK_TRAIN_CHARISMA ];
+
+        desirableAugs.push("BitWire");
+        desirableAugs.push("Neuralstimulator");
+        desirableAugs.push("DataJack");
+    } else {
+        wantedLevelLowerTask = TASK_VIGILANTE;
+
+        trainingTasks = [ TASK_TRAIN_COMBAT, TASK_TRAIN_CHARISMA ];
+
+        desirableAugs.push("Bionic Arms");
+        desirableAugs.push("Bionic Legs");
+        desirableAugs.push("Bionic Spine");
+        desirableAugs.push("BrachiBlades");
+        desirableAugs.push("Nanofiber Weave");
+        desirableAugs.push("Synthetic Heart");
+        desirableAugs.push("Synfibril Muscle");
+        desirableAugs.push("Graphene Bone Lacings");
     }
 
-    let nextAscensionAttempt = new Date().getTime() + 60 * 1000;
+
+    var ascensionCycles = flagValues["asc"];
+    var nextAscensionAttempt = 0;
+    var cycleMs = 2100;
+    //var ascensionMultLimit = flagValues["alim"];
+
+    ns.print(`unassignedTask: ${TASK_UNASSIGNED}`);
+    ns.print(`territoryTask: ${territoryTask}`);
+    ns.print(`trainingTasks: ${trainingTasks}`);
+    ns.print(`possibleTasks: ${possibleTasks}`);
+    ns.print(`wantedLevelLowerTask: ${wantedLevelLowerTask}`);
+
+    await ns.sleep(1000);
+
+    var otherGangs = ns.gang.getOtherGangInformation();
+    var otherGangNames = [];
+    for(var gangName in otherGangs) {
+        otherGangNames.push(gangName);
+        //ns.tprint(gangName);
+    }
 
     while (true) {
-        const doAscension = getItem(settings.keys.doAscension) || false;
-        const buyEquipment = getItem(settings.keys.buyEquipment) || false;
-        const strengthAscensionMultHardLimit = getItem(settings.keys.strAscMultHardLimit) || 10;
-        setItem(settings.keys.doAscension, doAscension);
-        setItem(settings.keys.buyEquipment, buyEquipment);
-        setItem(settings.keys.strAscMultHardLimit, strengthAscensionMultHardLimit);
+        myGang = ns.gang.getGangInformation();
+        var otherGangs = ns.gang.getOtherGangInformation();
+        var buyableEquipment = ns.gang.getEquipmentNames().filter(e => {
+            return ns.gang.getEquipmentType(e) != "Augmentation" || desirableAugs.includes(e);
+        });
 
-        const equipmentsToBuy = getItem(settings.keys.equipmentList) || [];
-        const augumentationssToBuy = getItem(settings.keys.augumentationList) || [];
-
-        while (ns.gang.canRecruitMember()) {
-            const gangMemberNames = getMemberNames(ns);
-            ns.gang.recruitMember(gangMemberNamesList[gangMemberNames.length]);
-            ns.tprint(`[${localeHHMMSS()}] Recruited ${gangMemberNamesList[gangMemberNames.length]}`);
-            await ns.sleep(1)
+        // -- Setup gang warfare --
+        if(myGang.isHacking) {
+            ns.gang.setTerritoryWarfare(false);
+        } else {
+            ns.gang.setTerritoryWarfare(otherGangNames.every(name => ns.gang.getChanceToWinClash(name) > minCombatWinLevel));
         }
 
-        const gangMemberNames = getMemberNames(ns);
+        var members = ns.gang.getMemberNames();
 
-        gangMemberNames
-            .sort(sortBy(ns, SORT_TYPES.STR, DIRECTIONS.DESC))
-            .sort(sortBy(ns, SORT_TYPES.STR_MULT, DIRECTIONS.DESC))
-            .sort(sortBy(ns, SORT_TYPES.STR_ASC_MULT, DIRECTIONS.DESC))
+        // -- Recruit new members if we can --
+        while(ns.gang.canRecruitMember()) {
+            var possibleNames = memberNamePool.filter(name => !members.includes(name));
+            var toRecruit = possibleNames[getRandomInt(possibleNames.length)];
 
-        if (buyEquipment) {
-            let hasAllEq = true;
+            ns.gang.recruitMember(toRecruit);
+            await ns.sleep(1);
+        }
 
-            gangMemberNames.forEach((gangMemberName) => {
-                const gangMemberInfo = getMemberInformation(ns, gangMemberName);
-
-                equipmentsToBuy.forEach((equipment) => {
-                    if (gangMemberInfo.upgrades.includes(equipment.name)) return;
-
-                    const boughtEquipment = ns.gang.purchaseEquipment(gangMemberName, equipment.name);
-
-                    if (boughtEquipment) {
-                        ns.print(`[${localeHHMMSS()}] Bought ${equipment.name} (${equipment.type}) for ${gangMemberName}`);
-                    } else {
-                        hasAllEq = false;
-                    }
-                })
-            });
-
-            if (hasAllEq) {
-                let hasAllNonHackAug = true;
-
-                gangMemberNames.forEach((gangMemberName) => {
-                    const gangMemberInfo = getMemberInformation(ns, gangMemberName);
-
-                    augumentationssToBuy
-                        .filter((aug) => !aug.hack)
-                        .forEach((equipment) => {
-                            if (gangMemberInfo.augmentations.includes(equipment.name)) return;
-
-                            const boughtEquipment = ns.gang.purchaseEquipment(gangMemberName, equipment.name);
-
-                            if (boughtEquipment) {
-                                ns.print(`[${localeHHMMSS()}] Bought ${equipment.name} (${equipment.type}) for ${gangMemberName}`)
-                            } else {
-                                hasAllNonHackAug = false
-                            }
-                        })
-                });
-
-                if (hasAllNonHackAug) {
-                    gangMemberNames.forEach((gangMemberName) => {
-                        const gangMemberInfo = getMemberInformation(ns, gangMemberName)
-
-                        augumentationssToBuy
-                            .filter((aug) => aug.hack)
-                            .forEach((equipment) => {
-                                if (gangMemberInfo.augmentations.includes(equipment.name)) return
-
-                                const boughtEquipment = ns.gang.purchaseEquipment(gangMemberName, equipment.name)
-
-                                if (boughtEquipment) {
-                                    ns.print(`[${localeHHMMSS()}] Bought ${equipment.name} (${equipment.type}) for ${gangMemberName}`)
-                                }
-                            })
-                    })
-                }
+        // -- Handle ascensions --
+        const batCost = ns.gang.getEquipmentCost('Baseball Bat');
+        if (!batCost) {
+            ns.tprint("Unable to determine cost of bat");
+            ns.exit();
+        }
+        if (ns.getServerMoneyAvailable("home") > ((batCost * ASCEND_CYCLES) * 2)) {
+            const memberToAscend = determineBestMemberToAscend(ns);
+            if (memberToAscend != null) {
+                ns.print("Found best member to ascend: " + memberToAscend);
+                await ascendMember(ns, memberToAscend);
             }
         }
 
-        if (gangMemberNames.length && new Date().getTime() > nextAscensionAttempt) {
-            if (doAscension) {
-                let strengthAscensionMultExpectation = 0
-                let minimumStrengthAscensionMult = Infinity
-                gangMemberNames.forEach((gangMemberName) => {
-                    const gangMemberInfo = getMemberInformation(ns, gangMemberName)
+        // -- Buy Gear --
+        members = ns.gang.getMemberNames();
+        members.sort((a,b)=> { return Math.random()*2-1; } );
+        members.forEach(member => buyEquipment(ns, member, buyableEquipment));
 
-                    minimumStrengthAscensionMult = Math.min(minimumStrengthAscensionMult, gangMemberInfo.str_asc_mult)
-                })
+        // -- Assign Tasks --
+        let numTerritoryTasked = 0;
+        const totalMembers = members.length;
+        const desiredTerritoryWorkers = myGang.isHacking
+            ? 0
+            : Math.floor(totalMembers * TERRITORY_TASKED_PERCENT / 100);
 
-                strengthAscensionMultExpectation = Math.max(0, minimumStrengthAscensionMult) + 2
-                strengthAscensionMultExpectation = Math.min(strengthAscensionMultExpectation, strengthAscensionMultHardLimit)
+        while (members.length > 0) {
+            var task = "";
+            const member = members.pop();
+            const memInfo = ns.gang.getMemberInformation(member);
 
-                const isEarlyAscension = minimumStrengthAscensionMult < 2 ? true : false
-                const gangMembersToAscend = []
+            let statsTarget = 50;
 
-                gangMemberNames.forEach((gangMemberName) => {
-                    const gangMemberInfo = getMemberInformation(ns, gangMemberName)
-                    if (gangMemberInfo.str_asc_mult < strengthAscensionMultExpectation) {
-                        const boughtEquipment = equipmentsToBuy.filter((equipment) => gangMemberInfo.upgrades.includes(equipment.name))
+            myGang = ns.gang.getGangInformation();
 
-                        if ((isEarlyAscension && boughtEquipment.length > 10) || boughtEquipment.length === equipmentsToBuy.length) {
-                            gangMembersToAscend.push(gangMemberName)
-                        }
-                    }
-                })
-
-                const maxMembersToAscend = Math.min(5, Math.ceil(gangMemberNames.length / 3))
-                gangMembersToAscend
-                    .sort(sortBy(ns, SORT_TYPES.REPUTATION, DIRECTIONS.ASC))
-                    .slice(0, maxMembersToAscend)
-                    .forEach((gangMemberName) => {
-                        ns.gang.ascendMember(gangMemberName)
-                        ns.tprint(`[${localeHHMMSS()}] Ascended ${gangMemberName}`)
-                    })
+            let reduceWanted = myGang.wantedLevel > 1;
+            if(balanceTasks) {
+                reduceWanted |= myGang.wantedLevelGainRate > 0;
             }
 
-            nextAscensionAttempt = new Date().getTime() + 10 * 60 * 1000
-        }
-
-        const myGang = getMyGangInformation(ns)
-        const minimumWanted = 10
-        const wantedToRespectRatio = 10
-        const wantToReduceWanted =
-            myGang.wantedLevel > minimumWanted &&
-            ((myGang.respectGainRate < myGang.wantedLevelGainRate * wantedToRespectRatio && myGang.wantedLevelGainRate) ||
-            myGang.wantedLevel * wantedToRespectRatio > myGang.respect);
-
-        let gangMembersTaskTargets = {
-            wanted: 0,
-            terrorism: 0,
-            traffick: 0
-        };
-
-        const terrorismDividerRate = myGang.wantedLevel > myGang.respect || myGang.respect < 2500000 ? 2 : 4
-
-        gangMembersTaskTargets.wanted = wantToReduceWanted ? Math.ceil(gangMemberNames.length / 3) : 0
-        gangMembersTaskTargets.terrorism = Math.max(0, Math.ceil((gangMemberNames.length - gangMembersTaskTargets.wanted) / terrorismDividerRate))
-        gangMembersTaskTargets.traffick = Math.max(0, gangMemberNames.length - gangMembersTaskTargets.wanted - gangMembersTaskTargets.terrorism)
-        ns.print("Desired Members Counts:"
-            + " (wanted: " + gangMembersTaskTargets.wanted + ")"
-            + " (terrorism: " + gangMembersTaskTargets.terrorism + ")"
-            + " (traffick: " + gangMembersTaskTargets.traffick + ")");
-
-        gangMemberNames.sort(sortBy(ns, SORT_TYPES.TERRORISM, DIRECTIONS.DESC)).sort(sortBy(ns, SORT_TYPES.VIGILANTIE, DIRECTIONS.DESC))
-
-        gangMemberNames.forEach((gangMemberName) => {
-            const terrorismAbilities = getMemberAbilities(ns, gangMemberName).terrorismAbilities
-            const isTerrorismRisky = terrorismAbilities > 620 && terrorismAbilities < 710
-
-            if (gangMembersTaskTargets.wanted > 0) {
-                ns.gang.setMemberTask(gangMemberName, 'Vigilante Justice')
-                gangMembersTaskTargets.wanted -= 1
-            } else if (!isTerrorismRisky && gangMembersTaskTargets.terrorism > 0) {
-                ns.gang.setMemberTask(gangMemberName, 'Terrorism')
-                gangMembersTaskTargets.terrorism -= 1
-            } else if (terrorismAbilities > 800 && gangMembersTaskTargets.traffick > 0) {
-                ns.gang.setMemberTask(gangMemberName, 'Traffick Illegal Arms')
-                gangMembersTaskTargets.traffick -= 1
+            if((myGang.isHacking && memInfo.hacking < statsTarget) ||
+                (!myGang.isHacking && memInfo.strength < statsTarget && memInfo.agility < statsTarget && memInfo.charisma < statsTarget && memInfo.defense < statsTarget)) {
+                // TRAINING
+                task = trainingTasks[getRandomInt(trainingTasks.length)];
+            } else if (numTerritoryTasked < desiredTerritoryWorkers) {
+                // TERRITORY
+                task = TASK_TERRITORY_WARFARE;
+              numTerritoryTasked += 1;
+            } else if (reduceWanted) {
+                // WANTED
+                task = wantedLevelLowerTask;
             } else {
-                if (gangMemberNames.length < 30 && getMemberAbilities(ns, gangMemberName).str > 20 && getMemberAbilities(ns, gangMemberName).str < 120) {
-                    ns.gang.setMemberTask(gangMemberName, 'Mug People')
-                } else if (isTerrorismRisky) {
-                    if (getMemberAbilities(ns, gangMemberName).str > 120) {
-                        ns.gang.setMemberTask(gangMemberName, 'Strongarm Civilians')
-                    } else if (getMemberAbilities(ns, gangMemberName).str > 20) {
-                        ns.gang.setMemberTask(gangMemberName, 'Mug People')
-                    } else {
-                        ns.gang.setMemberTask(gangMemberName, 'Vigilante Justice')
-                        gangMembersTaskTargets.wanted -= 1
-                    }
-                } else {
-                    ns.gang.setMemberTask(gangMemberName, 'Terrorism')
-                    gangMembersTaskTargets.terrorism -= 1
-                }
+                // OTHER
+                // TODO: This should really be based on what they can do well based on stats
+                task = possibleTasks[getRandomInt(possibleTasks.length) - 1];
             }
-        })
 
-        await ns.sleep(2500)
+            ns.gang.setMemberTask(member, task);
+        }
+
+        await ns.sleep(cycleMs);
+        nextAscensionAttempt -= cycleMs;
     }
 }
