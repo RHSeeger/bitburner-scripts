@@ -1,0 +1,91 @@
+/*
+ * Executable: exec.backdoor.ns
+ *
+ * Backdoors every server as it becomes possible
+ * This can leave the player on a server other than home
+ * This is super slow because it tries to weaken the server down as low as possible before hacking
+ * Throws error for acknet-node-0 server because it is a Hacknet No
+ */
+
+import {
+    getServerList,
+    getHostname,
+    getParent
+    } from 'lib.servers.ns';
+
+
+function getPathTo(server) {
+    if (getParent(server) === null) {
+        return [];
+    }
+    let result = getPathTo(getParent(server));
+    result.push(server);
+    return result;
+}
+
+async function tryInstallBackdoor(ns, server) {
+    let hostname = getHostname(server);
+    let path = getPathTo(server);
+
+    while (path.length > 0) {
+        const parent = path.shift();
+        ns.connect(getHostname(parent));
+    }
+    if (await ns.manualHack()) {
+        ns.print("Manually hacked: " + hostname);
+        ns.connect('home');
+        return true;
+    } else {
+        ns.connect('home');
+        return false;
+    }
+}
+
+async function installBackdoor(ns, server) {
+    let hostname = getHostname(server);
+
+    if (ns.getServer(getHostname(server)).backdoorInstalled) {
+        return true;
+    }
+    if (!ns.hasRootAccess(hostname)) {
+        return false;
+    }
+
+    const minSecurity = ns.getServerMinSecurityLevel(hostname);
+
+    while (true) {
+        ns.print("Attempting to manually hack: " + hostname);
+
+        // Try one quick manual hack first, before even trying to weaken
+        if (await tryInstallBackdoor(ns, server)) {
+            return true;
+        }
+
+        // Ok, that didn't work. Try weakening it down and then trying again
+        while (ns.getServerSecurityLevel(hostname) > minSecurity) {
+            await ns.weaken(hostname);
+            if (await tryInstallBackdoor(ns, server)) {
+                return true;
+            }
+        }
+
+        return await tryInstallBackdoor(ns, server);
+    }
+}
+
+export async function main(ns) {
+    let servers = getServerList(ns);
+
+    while (true) {
+        let failed = [];
+        for (let i=0; i<servers.length; i++) {
+            const server = servers[i];
+            if (! await installBackdoor(ns, server)) {
+                failed.push(server);
+            }
+        }
+        servers = failed;
+        ns.print("Failed to backdoor " + servers.length + " servers: " + servers.map(server => getHostname(server)).join(", "));
+        await ns.sleep(10*1000);
+    }
+}

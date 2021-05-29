@@ -161,7 +161,7 @@ export async function main(ns) {
     const servers = getServerList(ns);
 
     // Generate the list of servers we want to target with hacks
-    const target = "foodnstuff";
+    const target = "joesguns";
 
     // And generate a list of servers that can be used to attack
     let attackServers = servers

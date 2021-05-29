@@ -17,6 +17,38 @@ const CRIMES_TO_DO = [
     "heist"
 ];
 
+const XP_FIELDS = [
+    'hacking_exp',
+    'strength_exp',
+    'dexterity_exp',
+    'agility_exp',
+    'charisma_exp',
+    'intelligence_exp'
+];
+
+function calculateXpWeight(ns, crimeStats) {
+    const numStats = (XP_FIELDS
+        .filter(field => crimeStats[field] > 0)
+        .length);
+
+    // The more stats it effects, the more it's worth to us
+    const countMultiplier = 1 + (numStats * 0.01);
+
+    // The more it effects the stats, the more it's worth
+    const averageStatIncrease = XP_FIELDS
+        .map(field => crimeStats[field])
+        .reduce((a, b) => a + b)
+        / numStats;
+    const increaseMultipler = 1 + (Math.log10(averageStatIncrease) * 0.001);
+
+    ns.print("XP Weights [" + crimeStats.name + "]: (increaseX: " + increaseMultipler + ") (countX: " + countMultiplier + ")");
+    return increaseMultipler * countMultiplier;
+}
+
+function calculateMoneyWeight(ns, crime, crimeStats) {
+    return ns.getCrimeChance(crime) * crimeStats.money / crimeStats.time;
+}
+
 export async function main(ns) {
     ns.tail(); // It's active, and this gives us a way to kill it off if it becomes a problem
 
@@ -27,7 +59,11 @@ export async function main(ns) {
             const bestCrime = CRIMES_TO_DO.sort((a, b) => {
                 const statsA = ns.getCrimeStats(a);
                 const statsB = ns.getCrimeStats(b);
-                return (ns.getCrimeChance(b) * statsB.money / statsB.time) - (ns.getCrimeChance(a) * statsA.money / statsA.time)
+                const durationWeightA = Math.log10(statsA.time) * 0.01;
+                const durationWeightB = Math.log10(statsB.time) * 0.01;
+                const weightA = calculateXpWeight(ns, statsA)  * calculateMoneyWeight(ns, a, statsA) / durationWeightA;
+                const weightB = calculateXpWeight(ns, statsB)  * calculateMoneyWeight(ns, b, statsB) / durationWeightB;
+                return weightB - weightA;
             })[0];
 
             const crimeStats = ns.getCrimeStats(bestCrime);

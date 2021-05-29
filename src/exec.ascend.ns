@@ -1,0 +1,59 @@
+/*
+ * Executable: exec.ascend.ns
+ *
+ * Copied From: https://pastebin.com/EbB4g59L
+ */
+
+function printUsage(ns) {
+    ns.tprint("Usage: run exec.ascend [member name] [equipment name] [number of times]\n"
+        + "where:\n"
+        + "\tmember name = the name of the gang member to ascend\n"
+        + "\tequipment name = the name of the equipment to buy before ascending (default=Baseball Bat)\n"
+        + "\tnumber of times = how many times to ascend (default=enough to spend half your money");
+}
+
+function calculateDefaultTimes(ns, equip) {
+    const equipCost = ns.gang.getEquipmentCost(equip);
+    const playerMoney = ns.getServerMoneyAvailable("home");
+    return Math.floor((playerMoney / 2) / equipCost);
+}
+
+
+//run gangMemberAscend.ns member [timesToAscend] [equip]
+//Example usage: run gangMemberAscend.ns "Don Cannoli" 1e9 "M15A10 Assault Rifle"
+//Defaults - timesToAscend: 1e6, equip: "Baseball Bat"
+//Do not navigate to Gang screen while this script is still running. It will hang the browser.
+export async function main(ns) {
+    const member = ns.args[0];
+    if (!member || !ns.gang.getMemberNames().includes(member)) {
+        ns.tprint("Invalid member name: " + member);
+        printUsage(ns);
+        return;
+    }
+
+    const equip = !ns.args[1] ? "Baseball Bat" : ns.args[1];
+    if (!ns.gang.getEquipmentNames().includes(equip)) {
+        ns.tprint("Invalid equipment name: " + equip);
+        printUsage(ns);
+        return;
+    }
+
+    const timesToAscend = !ns.args[2] ? calculateDefaultTimes(ns, equip) : ns.args[2];
+    if (! ( timesToAscend > 0)) {
+        ns.tprint("Invalid times to ascend: " + timesToAscend);
+        printUsage(ns);
+        return;
+    }
+
+    ns.tprint(`\nBeginning ascension of member ${member} with ${equip} x ${timesToAscend}.`+
+        `\nEstimated time ${timesToAscend/100000} seconds. `+
+        `Estimated cost $${ns.nFormat(timesToAscend * ns.gang.getEquipmentCost(equip),"0.000a")}`+
+        `\nDo not navigate to Gang screen while this script is still running. It will hang the browser.`);
+    for (let i = 0; i < timesToAscend; i++) {
+        ns.gang.purchaseEquipment(member, equip);
+        ns.gang.ascendMember(member);
+        if (i % 10000 == 0) await ns.sleep(100);
+    }
+
+    ns.tprint(`\nFinished ascending ${member} with ${equip} x ${timesToAscend}.`);
+}

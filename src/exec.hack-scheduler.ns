@@ -36,7 +36,7 @@ const HACK_SECURITY_PER_THREAD = 0.002;
 const GROW_SECURITY_PER_THREAD = 0.004;
 const WEAKEN_SECURITY_PER_THREAD = 0.05; // it's actually -0.05 since it lowers it, but formulas account for that
 
-const SCRIPT_DELAY = 1; // seconds
+const SCRIPT_DELAY = .2; // seconds
 
 const SCRIPT_WEAKEN = "weaken.ns";
 const SCRIPT_GROW = "grow.ns";
@@ -144,6 +144,9 @@ function getTargettingInfo(ns, targets) {
         target.growTime = ns.formulas.basic.growTime(server, player);
         target.weakenTime = ns.formulas.basic.weakenTime(server, player);
 
+        target.hackPercent =  ns.formulas.basic.hackPercent(server, player) * 100;
+        target.growPercent =  (ns.formulas.basic.growPercent(server, 1, player) - 1) * 100;
+
         target.hackPercentAt0 = getHackPercentAt0(ns, player, server);
         target.hackChanceAt0 = getHackChanceAt0(ns, player, server);
         target.hackTimeAt0 = getHackTimeAt0(ns, player, server);
@@ -185,7 +188,7 @@ function getMemoryUsable(ns, hostname) {
 
 // Figure out how many ack threads it will take to completely drain this target
 function calculateHackThreads(hackPercentage, targetServer) {
-    return Math.floor(hackPercentage / targetServer.hackPercentAt0);
+    return Math.floor(hackPercentage / targetServer.hackPercent);
 }
 
 // The number of weaken threads to get back to 0 security after hacking
@@ -197,7 +200,7 @@ function calculateWeakenHackThreads(hackThreads) {
 // The number of grow threads we need to increase the money back to 100%
 function calculateGrowThreads(hackPercentage, targetServer) {
     let remainingAmount = (100 - hackPercentage) * 0.01 * targetServer.maxMoney;
-    const multiplier = 1 + (targetServer.growPercentAt0 / 100);
+    const multiplier = 1 + (targetServer.growPercent / 100);
     let rounds = 0;
     while (remainingAmount < targetServer.maxMoney) {
         remainingAmount = (remainingAmount + 1) * multiplier;
@@ -252,33 +255,65 @@ async function getHackPercentage(ns, target, attackServers) {
         * 0.95;
     ns.tprint("Total available memory: " + availableMemory);
 
-    let lastPercentage = 100;
-    let currentPercentage = lastPercentage;
 
-    while (true) {
-        lastPercentage = currentPercentage;
+    // First, check the 100 value... because if we can get that, we're done
+    if(getScriptSizeTotal(ns, target, 100) <= availableMemory) {
+        return 100;
+    }
 
-        const memoryUsed = getScriptSizeTotal(ns, target, currentPercentage);
-        if (memoryUsed === null) {
-            ns.tprint("Unable to find a workable hack percentage");
-            return null;
-        }
-        if (memoryUsed > availableMemory) {
-            currentPercentage /= 2;
-            if (currentPercentage <= 0) {
-                ns.tprint("Unable to find a workable hack percentage");
-                return null;
-            }
-        } else if (memoryUsed <= availableMemory) {
-            currentPercentage = (lastPercentage + currentPercentage) / 2;
-            if (Math.abs(currentPercentage - lastPercentage) < 0.001) { // at some point we need to stop
-                return lastPercentage;
-            }
-        }
+    // Otherwise, use bounded binary search
+    const value = await getHackPercentageBounded(ns, target, attackServers, availableMemory, 0, 100);
+    if (value === null) {
+        ns.tprint("Unable to find a workable percentage");
+    } else {
+        ns.tprint("Found percentage: " + value);
+    }
+    return value;
+}
 
-        await ns.sleep(10);
+/*
+ * Returns the maximum percentage of the target server's money that can be hacked by the specified attack servers
+ * Must be between the two bound values, non-inclusive
+ * minValue = the lower bound value that will not work
+ * maxValue = the upper bound value that will not work
+ */
+async function getHackPercentageBounded(ns, target, attackServers, availableMemory, minPercentage, maxPercentage) {
+    //console.log("Checking hack percentage [" + getHostname(target) + "] (" + minPercentage + " - " + maxPercentage + ") with " + availableMemory.toLocaleString() + " memory");
+    if ((maxPercentage - minPercentage) < 0.2) {
+        // If the gap is small enough, don't bother
+        return null;
+    }
+
+    // Give the system some time to update the UI
+    await ns.sleep(10);
+
+    let currentPercentage = (minPercentage + maxPercentage) / 2;
+    const memoryUsed = getScriptSizeTotal(ns, target, currentPercentage);
+
+    if (memoryUsed == null) {
+        //console.log("Not enough memory to run any scripts");
+        // This percentage isn't enough to run any threads
+        return await getHackPercentageBounded(ns, target, attackServers, availableMemory, currentPercentage, maxPercentage);
+    }
+
+    if (memoryUsed > availableMemory) {
+        //console.log("Memory used (" + memoryUsed.toLocaleString() + ") was more than available");
+        // This amount didn't work, try reducing the amount
+        return await getHackPercentageBounded(ns, target, attackServers, availableMemory, minPercentage, currentPercentage);
+    }
+
+    // This amount worked. See if we can get more. If not, the return this value
+    //console.log("Memory used (" + memoryUsed.toLocaleString() + ") was less than available... trying larger");
+    const largerValue = await getHackPercentageBounded(ns, target, attackServers, availableMemory, currentPercentage, maxPercentage);
+    if (largerValue !== null) {
+        //console.log("Using larger value: " + largerValue);
+        return largerValue;
+    } else {
+        //console.log("Using current value: " + currentPercentage);
+        return currentPercentage;
     }
 }
+
 
 async function weakenToMin(ns, target, attackServersIn, round) {
     const weakenOnceSize = ns.getScriptRam(SCRIPT_HACK, "home");
