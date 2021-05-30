@@ -1,0 +1,50 @@
+/*
+ * Executable: exec.purchase-servers-8g.ns
+ *
+ * Purchases as many 8g servers as the max number of servers the system allows
+ */
+
+// How much RAM each purchased server will have. In this case, it'll be 8GB.
+const RAM = 8;
+
+export async function main(ns) {
+    ns.disableLog("ALL");
+
+    // Iterator we'll use for our loop
+    let i = 0;
+
+    // Continuously try to purchase servers until we've reached the maximum
+    // amount of servers
+    ns.print("Allowed Servers: " + ns.getPurchasedServerLimit());
+    while (ns.getPurchasedServers().length < ns.getPurchasedServerLimit()) {
+        let purchased = false;
+        const serverCost = ns.getPurchasedServerCost(RAM);
+
+        // Check if we have enough money to purchase a server
+        const availableMoney = ns.getServerMoneyAvailable("home");
+        if (availableMoney > serverCost) {
+            // If we have enough money, then:
+            //  1. Purchase the server
+            //  2. Copy our hacking script onto the newly-purchased server
+            //  3. Run our hacking script on the newly-purchased server with 3 threads
+            //  4. Increment our iterator to indicate that we've bought a new server
+            let desiredHostname = "pserv-" + i;
+            var hostname = ns.purchaseServer(desiredHostname, RAM);
+            if (!hostname) {
+                ns.print("Unable to purchase server: " + desiredHostname);
+            } else {
+                ns.scp("early-hack-template.script", hostname);
+                ns.exec("early-hack-template.script", hostname, 3);
+                purchased = true;
+            }
+            ++i;
+        } else {
+            ns.print("Unable to purchase server costing [" + ns.nFormat(serverCost, "$0.000a") + "]"
+                + " with available cash [" + ns.nFormat(availableMoney, "$0.000a") + "]");
+        }
+
+        await ns.sleep(purchased ? 1000 : 1000);
+    }
+
+    ns.tprint("Done purchasing servers")
+}

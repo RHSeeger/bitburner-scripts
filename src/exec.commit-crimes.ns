@@ -52,11 +52,13 @@ function calculateMoneyWeight(ns, crime, crimeStats) {
 export async function main(ns) {
     ns.tail(); // It's active, and this gives us a way to kill it off if it becomes a problem
 
+    const crime = ns.args[0] && ns.getCrimeStats(ns.args[0]) ? ns.args[0] : null;
+
     let stillCriming = true;
 
     while (stillCriming) {
         if (!ns.isBusy()) {
-            const bestCrime = CRIMES_TO_DO.sort((a, b) => {
+            const bestCrime = crime ? crime : (CRIMES_TO_DO.sort((a, b) => {
                 const statsA = ns.getCrimeStats(a);
                 const statsB = ns.getCrimeStats(b);
                 const durationWeightA = Math.log10(statsA.time) * 0.01;
@@ -64,7 +66,7 @@ export async function main(ns) {
                 const weightA = calculateXpWeight(ns, statsA)  * calculateMoneyWeight(ns, a, statsA) / durationWeightA;
                 const weightB = calculateXpWeight(ns, statsB)  * calculateMoneyWeight(ns, b, statsB) / durationWeightB;
                 return weightB - weightA;
-            })[0];
+            })[0]);
 
             const crimeStats = ns.getCrimeStats(bestCrime);
 
@@ -84,6 +86,7 @@ export async function main(ns) {
                 && player.workType === expectedWorkType
                 && player.crimeType === expectedCrimeType;
 
+            ns.print("Current Karma: " + ns.nFormat(ns.heart.break(), "0.000a"));
             ns.print("Still Criming? " + stillCriming);
         }
 

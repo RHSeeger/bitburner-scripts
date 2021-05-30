@@ -1,0 +1,60 @@
+/*
+ * Executable: Buys NeuroFlux Governors and resets, running itself
+ */
+
+
+function localeHHMMSS(ms = 0) {
+    if (!ms) {
+        ms = new Date().getTime();
+    }
+
+    return new Date(ms).toLocaleTimeString();
+}
+
+function getMoney(ns) {
+    return ns.getServerMoneyAvailable('home') - 1000000;
+}
+
+function getNeuroFlux(ns) {
+    return ns.getAugmentationCost('NeuroFlux Governor');
+}
+
+export async function main(ns) {
+    //ns.tail();
+
+    var money = getMoney(ns);
+    var cost = getNeuroFlux(ns)[1];
+    var reputation = getNeuroFlux(ns)[0];
+    var facrep = ns.getFactionRep('Slum Snakes');
+    const ascend = ns.args[0] || 0;
+    //ns.tail();
+    ns.disableLog('ALL');
+    ns.tprint(`[${localeHHMMSS()}] Starting singNeuroFlux.ns`);
+
+    let hostname = ns.getHostname();
+
+    if (hostname !== 'home') {
+        throw new Exception('Run the script from home');
+    }
+
+    while (money > cost && facrep > reputation) {
+        ns.purchaseAugmentation('Slum Snakes', 'NeuroFlux Governor');
+        money = getMoney(ns);
+        cost = getNeuroFlux(ns)[1];
+        reputation = getNeuroFlux(ns)[0];
+        facrep = ns.getFactionRep('Slum Snakes');
+        ns.tprint(`[${localeHHMMSS()}] Purchased NeuroFlux for ${cost}`);
+        await ns.sleep(1000);
+    }
+    if (cost > money) {
+        ns.tprint(`[${localeHHMMSS()}] NeuroFlux cost: ${ns.nFormat(cost, "$0.000a")} too high`);
+    }
+    if (reputation > facrep) {
+        ns.tprint(`[${localeHHMMSS()}] NeuroFlux cost: reputation ${ns.nFormat(reputation, "0.000a")} to high`);
+    }
+    if (ascend === 1) {
+        ns.installAugmentations('exec.buy-nfs.ns');
+    } else {
+        ns.exit();
+    }
+}

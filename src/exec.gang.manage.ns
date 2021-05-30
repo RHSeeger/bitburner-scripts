@@ -358,6 +358,7 @@ export async function main(ns) {
         });
 
         // -- Setup gang warfare --
+
         if(myGang.isHacking) {
             ns.gang.setTerritoryWarfare(false);
         } else {
@@ -367,6 +368,7 @@ export async function main(ns) {
         var members = ns.gang.getMemberNames();
 
         // -- Recruit new members if we can --
+
         while(ns.gang.canRecruitMember()) {
             var possibleNames = memberNamePool.filter(name => !members.includes(name));
             var toRecruit = possibleNames[getRandomInt(possibleNames.length)];
@@ -376,7 +378,8 @@ export async function main(ns) {
         }
 
         // -- Handle ascensions --
-        if (false && shouldAscendMembers) {
+
+        if (shouldAscendMembers) {
             const batCost = ns.gang.getEquipmentCost('Baseball Bat');
             if (!batCost) {
                 ns.tprint("Unable to determine cost of bat");
@@ -392,116 +395,120 @@ export async function main(ns) {
         }
 
         // -- Buy Gear --
+
         members = ns.gang.getMemberNames();
         members.sort((a,b)=> { return Math.random()*2-1; } );
         members.forEach(member => buyEquipment(ns, member, buyableEquipment));
 
         // -- Assign Tasks --
-        /*
-         * Assign all members below the level of min-stats, then train
-         * If there are no members training (because of that ^), set one member to training (the one with the lowest stats)
-         * For each member
-         * - If wanted > 1 and wantedLevelGainRate > 0, then assign member to reduce wanted level
-         * - If territory warfare members < TERRITORY_TASKED_PERCENT, assign to warfare
-         * - If member can terrorism and traffic arms, pick whichever we have less of
-         * - If member can terrorism OR traffic arms, do the one it can
-         * - If member can strongarm, do that
-         * - If member can mug, do that
-         * - Otherwise, train
-         * Lastly, if territory warfare change is < required, turn if off and reassign members from warfare to training
-         *
-         * NOTE: We're skipping territorial warfare atm because we can do that manually
-         *
-         * TODO: This needs more work because it winds up leaving wanted level increasing
-         *       Would it work to add vigilantees as we add workers?
-         */
 
-        const memberNames = ns.gang.getMemberNames();
-        // Reset all members to doing nothing
-        memberNames.forEach(member => ns.gang.setMemberTask(member, TASK_UNASSIGNED));
+        const shouldAssignTasks = false;
+        if (shouldAssignTasks) {
+            /*
+             * Assign all members below the level of min-stats, then train
+             * If there are no members training (because of that ^), set one member to training (the one with the lowest stats)
+             * For each member
+             * - If wanted > 1 and wantedLevelGainRate > 0, then assign member to reduce wanted level
+             * - If territory warfare members < TERRITORY_TASKED_PERCENT, assign to warfare
+             * - If member can terrorism and traffic arms, pick whichever we have less of
+             * - If member can terrorism OR traffic arms, do the one it can
+             * - If member can strongarm, do that
+             * - If member can mug, do that
+             * - Otherwise, train
+             * Lastly, if territory warfare change is < required, turn if off and reassign members from warfare to training
+             *
+             * NOTE: We're skipping territorial warfare atm because we can do that manually
+             *
+             * TODO: This needs more work because it winds up leaving wanted level increasing
+             *       Would it work to add vigilantees as we add workers?
+             */
 
-        // For each member below <training level> strength, set them to training
-        let anyTraining = false;
-        memberNames
-            .map(member => ns.gang.getMemberInformation(member))
-            .filter(memberInfo => memberInfo.task === TASK_UNASSIGNED)
-            .forEach(memberInfo => {
-                if (memberInfo.strength < STATS_TRAIN_TARGET) {
-                    ns.gang.setMemberTask(memberInfo.name, TASK_TRAIN_COMBAT);
-                    anyTraining = true;
-                }
-            });
+            const memberNames = ns.gang.getMemberNames();
+            // Reset all members to doing nothing
+            memberNames.forEach(member => ns.gang.setMemberTask(member, TASK_UNASSIGNED));
 
-        // If there are no members training, set the one with the lowest str to train
-        // Make sure it's not one of the top 5
-        if (!anyTraining) {
-            const memberToTrain = memberNames
-                .map(member => ns.gang.getMemberInformation(member))
-                .sort((a, b) => b.str_asc_mult - a.str_asc_mult)
-                .splice(5, memberNames.length - 5)
-                .filter(memberInfo => memberInfo.task === TASK_UNASSIGNED)
-                .sort((a, b) => a.str_exp - b.str_exp)
-                [0];
-            ns.gang.setMemberTask(memberToTrain.name, TASK_TRAIN_COMBAT);
-        }
-
-        // Assign as many as necessary to bring down wanted
-        // We have to refetch it each time here, because the assigned jobs will change it
-        // TODO: this still isn't working... it's flipflopping between everyone vigilante, and nobody
-        if (myGang.wantedLevel > 1) {
-            // Use everyone
+            // For each member below <training level> strength, set them to training
+            let anyTraining = false;
             memberNames
                 .map(member => ns.gang.getMemberInformation(member))
                 .filter(memberInfo => memberInfo.task === TASK_UNASSIGNED)
-                .forEach(memberInfo => ns.gang.setMemberTask(memberInfo.name, TASK_VIGILANTE));
-        } else if (ns.gang.getGangInformation().wantedLevelGainRate > 0) {
-            // Use enough to bring gain rate below 0
-            const available = memberNames
-                .map(member => ns.gang.getMemberInformation(member))
-                .filter(memberInfo => memberInfo.task === TASK_UNASSIGNED);
-            while (ns.gang.getGangInformation().wantedLevelGainRate > 0 && available.length > 0) {
-                const currentMemberInfo = available.shift();
-                ns.gang.setMemberTask(currentMemberInfo.name, TASK_VIGILANTE);
+                .forEach(memberInfo => {
+                    if (memberInfo.strength < STATS_TRAIN_TARGET) {
+                        ns.gang.setMemberTask(memberInfo.name, TASK_TRAIN_COMBAT);
+                        anyTraining = true;
+                    }
+                });
+
+            // If there are no members training, set the one with the lowest str to train
+            // Make sure it's not one of the top 5
+            if (!anyTraining) {
+                const memberToTrain = memberNames
+                    .map(member => ns.gang.getMemberInformation(member))
+                    .sort((a, b) => b.str_asc_mult - a.str_asc_mult)
+                    .splice(5, memberNames.length - 5)
+                    .filter(memberInfo => memberInfo.task === TASK_UNASSIGNED)
+                    .sort((a, b) => a.str_exp - b.str_exp)
+                    [0];
+                ns.gang.setMemberTask(memberToTrain.name, TASK_TRAIN_COMBAT);
             }
-        }
 
-        // Choose the right active task for everyone left
-        // If member can terrorism and traffic arms, pick whichever we have less of
-        // If member can terrorism OR traffic arms, do the one it can
-        // If member can strongarm, do that
-        // If member can mug, do that
-        // Otherwise, train
-        let taskCounts = {
-            [TASK_TERRORISM]: 0,
-            [TASK_TRAFFICK_ARMS]: 0
-        };
-
-        memberNames
-            .map(member => ns.gang.getMemberInformation(member))
-            .filter(memberInfo => memberInfo.task === TASK_UNASSIGNED)
-            .forEach(memberInfo => {
-                if (ns.gang.getGangInformation().wantedLevelGainRate > 0) {
-                    ns.gang.setMemberTask(memberInfo.name, TASK_VIGILANTE);
-                } else if (canTerrorism(memberInfo) && canTrafficArms(memberInfo)) {
-                    const task = taskCounts[TASK_TERRORISM] < taskCounts[TASK_TRAFFICK_ARMS]
-                        ? TASK_TERRORISM : TASK_TRAFFICK_ARMS;
-                    ns.gang.setMemberTask(memberInfo.name, task);
-                    taskCounts[task] += 1;
-                } else if (canTerrorism(memberInfo)) {
-                    ns.gang.setMemberTask(memberInfo.name, TASK_TERRORISM);
-                    taskCounts[TASK_TERRORISM] += 1;
-                } else if (canTrafficArms(memberInfo)) {
-                    ns.gang.setMemberTask(memberInfo.name, TASK_TRAFFICK_ARMS);
-                    taskCounts[TASK_TRAFFICK_ARMS] += 1;
-                } else if (canTaskStrongArm(memberInfo)) {
-                    ns.gang.setMemberTask(memberInfo.name, TASK_STRONGARM);
-                } else if (canMug(memberInfo)) {
-                    ns.gang.setMemberTask(memberInfo.name, TASK_MUG);
-                } else {
-                    ns.gang.setMemberTask(memberInfo.name, TASK_TRAIN_COMBAT);
+            // Assign as many as necessary to bring down wanted
+            // We have to refetch it each time here, because the assigned jobs will change it
+            // TODO: this still isn't working... it's flipflopping between everyone vigilante, and nobody
+            if (myGang.wantedLevel > 1) {
+                // Use everyone
+                memberNames
+                    .map(member => ns.gang.getMemberInformation(member))
+                    .filter(memberInfo => memberInfo.task === TASK_UNASSIGNED)
+                    .forEach(memberInfo => ns.gang.setMemberTask(memberInfo.name, TASK_VIGILANTE));
+            } else if (ns.gang.getGangInformation().wantedLevelGainRate > 0) {
+                // Use enough to bring gain rate below 0
+                const available = memberNames
+                    .map(member => ns.gang.getMemberInformation(member))
+                    .filter(memberInfo => memberInfo.task === TASK_UNASSIGNED);
+                while (ns.gang.getGangInformation().wantedLevelGainRate > 0 && available.length > 0) {
+                    const currentMemberInfo = available.shift();
+                    ns.gang.setMemberTask(currentMemberInfo.name, TASK_VIGILANTE);
                 }
-            });
+            }
 
+            // Choose the right active task for everyone left
+            // If member can terrorism and traffic arms, pick whichever we have less of
+            // If member can terrorism OR traffic arms, do the one it can
+            // If member can strongarm, do that
+            // If member can mug, do that
+            // Otherwise, train
+            let taskCounts = {
+                [TASK_TERRORISM]: 0,
+                [TASK_TRAFFICK_ARMS]: 0
+            };
+
+            memberNames
+                .map(member => ns.gang.getMemberInformation(member))
+                .filter(memberInfo => memberInfo.task === TASK_UNASSIGNED)
+                .forEach(memberInfo => {
+                    if (ns.gang.getGangInformation().wantedLevelGainRate > 0) {
+                        ns.gang.setMemberTask(memberInfo.name, TASK_VIGILANTE);
+                    } else if (canTerrorism(memberInfo) && canTrafficArms(memberInfo)) {
+                        const task = taskCounts[TASK_TERRORISM] < taskCounts[TASK_TRAFFICK_ARMS]
+                            ? TASK_TERRORISM : TASK_TRAFFICK_ARMS;
+                        ns.gang.setMemberTask(memberInfo.name, task);
+                        taskCounts[task] += 1;
+                    } else if (canTerrorism(memberInfo)) {
+                        ns.gang.setMemberTask(memberInfo.name, TASK_TERRORISM);
+                        taskCounts[TASK_TERRORISM] += 1;
+                    } else if (canTrafficArms(memberInfo)) {
+                        ns.gang.setMemberTask(memberInfo.name, TASK_TRAFFICK_ARMS);
+                        taskCounts[TASK_TRAFFICK_ARMS] += 1;
+                    } else if (canTaskStrongArm(memberInfo)) {
+                        ns.gang.setMemberTask(memberInfo.name, TASK_STRONGARM);
+                    } else if (canMug(memberInfo)) {
+                        ns.gang.setMemberTask(memberInfo.name, TASK_MUG);
+                    } else {
+                        ns.gang.setMemberTask(memberInfo.name, TASK_TRAIN_COMBAT);
+                    }
+                });
+        }
 
         await ns.sleep(cycleMs);
         nextAscensionAttempt -= cycleMs;
