@@ -41,7 +41,7 @@ function calculateXpWeight(ns, crimeStats) {
         / numStats;
     const increaseMultipler = 1 + (Math.log10(averageStatIncrease) * 0.001);
 
-    ns.print("XP Weights [" + crimeStats.name + "]: (increaseX: " + increaseMultipler + ") (countX: " + countMultiplier + ")");
+    //ns.print("XP Weights [" + crimeStats.name + "]: (increaseX: " + increaseMultipler + ") (countX: " + countMultiplier + ")");
     return increaseMultipler * countMultiplier;
 }
 
