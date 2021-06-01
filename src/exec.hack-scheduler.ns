@@ -344,6 +344,12 @@ async function weakenToMin(ns, target, attackServersIn, round) {
 async function attack(ns, target, attackServersIn, round) {
     let attackServers = copyList(attackServersIn);
 
+    if (target.hackPercent === 0) {
+        // We can't hack this one at all, skip it
+        return attackServers;
+    }
+
+
     const hackPercentage = await getHackPercentage(ns, target, attackServers);
     ns.tprint("Found hack percentage: " + hackPercentage);
 
@@ -482,6 +488,8 @@ async function resetScripts(ns, server) {
 
 
 export async function main(ns) {
+    ns.disableLog("getServerUsedRam");
+    ns.disableLog("getServerMaxRam");
 
     [ SCRIPT_WEAKEN, SCRIPT_GROW, SCRIPT_HACK, SCRIPT_WEAKEN_ONCE].forEach(scriptName => {
         ns.tprint("Size: [" + scriptName + "]: " + ns.getScriptRam(scriptName));
