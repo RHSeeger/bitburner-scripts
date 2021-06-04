@@ -276,7 +276,7 @@ function watchSecurity(ns, targetHostname, minSecurityLevel) {
 function watchHackable(ns, servers) {
     const hostnames = servers.map((server) => getHostname(server));
     if (!ns.run(SCRIPT_WATCH_HACKABLE, 1, JSON.stringify(hostnames))) {
-        ns.tprint("Unable to run [" + SCRIPT_WATCH_HACKABLE + "] on [" + targetHostname + "]");
+        ns.tprint("Unable to run [" + SCRIPT_WATCH_HACKABLE + "] on [" + hostnames + "]");
     }
 }
 
