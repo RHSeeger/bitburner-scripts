@@ -374,6 +374,7 @@ export async function main(ns) {
             var toRecruit = possibleNames[getRandomInt(possibleNames.length)];
 
             ns.gang.recruitMember(toRecruit);
+            ns.gang.setMemberTask(toRecruit, TASK_TRAIN_COMBAT);
             await ns.sleep(1);
         }
 
