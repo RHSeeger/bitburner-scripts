@@ -42,10 +42,13 @@ const SCRIPT_WEAKEN = "weaken.ns";
 const SCRIPT_GROW = "grow.ns";
 const SCRIPT_HACK = "hack.ns";
 const SCRIPT_WEAKEN_ONCE = "weakenOnce.script";
+const SCRIPT_WATCH_SECURITY = "exec.watch-security.ns";
+const SCRIPT_WATCH_HACKABLE = "exec.watch-hackable.ns";
 
 const NUM_FLEXIS_PER_WEAKEN = 6; // Normally 6
 const SCRIPTS_TO_KILL = [
-    SCRIPT_GROW, SCRIPT_HACK, SCRIPT_WEAKEN, SCRIPT_WEAKEN_ONCE,
+    SCRIPT_GROW, SCRIPT_HACK, SCRIPT_WEAKEN,
+    // SCRIPT_WEAKEN_ONCE, // we don't want to kill this one yet.. need to add a "purge all" option
     // scripts from exec.hack-dist.ns, which will also need to be killed off if they are running
     "exec.flexihack.ns", "exec.weaken.ns"
 ];
@@ -60,11 +63,16 @@ const HOME_RESERVED_FRACTION = 0.10;
 
 const HACKNET_RESERVED_MEMORY = 256;
 
+const TAG_HACKING = "hacking";
+const TAG_WEAKENING = "weakening";
+
 /*
  * Returns the percentage of the server's money that would be returned by single hack thread
  * if the server was at minimum security (difficulty)
  */
 function getHackPercentAt0(ns, player, server) {
+    checkNonNull(ns, player, server);
+
     const currentSecurity = server.hackDifficulty;
 
     server.hackDifficulty = server.minDifficulty;
@@ -76,6 +84,8 @@ function getHackPercentAt0(ns, player, server) {
 }
 
 function getHackChanceAt0(ns, player, server) {
+    checkNonNull(ns, player, server);
+
     const currentSecurity = server.currentSecurity;
 
     server.hackDifficulty = server.minDifficulty;
@@ -86,6 +96,8 @@ function getHackChanceAt0(ns, player, server) {
 }
 
 function getHackTimeAt0(ns, player, server) {
+    checkNonNull(ns, player, server);
+
     const currentSecurity = server.currentSecurity;
 
     server.hackDifficulty = server.minDifficulty;
@@ -96,6 +108,8 @@ function getHackTimeAt0(ns, player, server) {
 }
 
 function getGrowPercentAt0(ns, player, server) {
+    checkNonNull(ns, player, server);
+
     const currentSecurity = server.currentSecurity;
 
     server.hackDifficulty = server.minDifficulty;
@@ -107,6 +121,8 @@ function getGrowPercentAt0(ns, player, server) {
 }
 
 function getGrowTimeAt0(ns, player, server) {
+    checkNonNull(ns, player, server);
+
     const currentSecurity = server.currentSecurity;
 
     server.hackDifficulty = server.minDifficulty;
@@ -117,6 +133,8 @@ function getGrowTimeAt0(ns, player, server) {
 }
 
 function getWeakenTimeAt0(ns, player, server) {
+    checkNonNull(ns, player, server);
+
     const currentSecurity = server.currentSecurity;
 
     server.hackDifficulty = server.minDifficulty;
@@ -131,6 +149,8 @@ function getWeakenTimeAt0(ns, player, server) {
  * Also sets a number of useful fields on the target servers
  */
 function getTargettingInfo(ns, targets) {
+    checkNonNull(ns, targets);
+
     const player = ns.getPlayer();
 
     for (let i = 0; i < targets.length; i++) {
@@ -165,6 +185,8 @@ function getTargettingInfo(ns, targets) {
 }
 
 function copyList(list) {
+    checkNonNull(list);
+
     return list.slice(0, list.length);
 }
 
@@ -173,6 +195,8 @@ function copyList(list) {
  * used on [home]
  */
 function getMemoryUsable(ns, hostname) {
+    checkNonNull(ns, hostname);
+
     let maxRam = ns.getServerMaxRam(hostname);
     let memory = maxRam - ns.getServerUsedRam(hostname);
     if (hostname === 'home') {
@@ -188,17 +212,23 @@ function getMemoryUsable(ns, hostname) {
 
 // Figure out how many ack threads it will take to completely drain this target
 function calculateHackThreads(hackPercentage, targetServer) {
+    checkNonNull(hackPercentage, targetServer);
+
     return Math.floor(hackPercentage / targetServer.hackPercent);
 }
 
 // The number of weaken threads to get back to 0 security after hacking
 function calculateWeakenHackThreads(hackThreads) {
+    checkNonNull(hackThreads);
+
     // We return one more than we need to, so that we reduce security a little bit faster
     return Math.ceil(1.2 * (hackThreads * HACK_SECURITY_PER_THREAD) / WEAKEN_SECURITY_PER_THREAD);
 }
 
 // The number of grow threads we need to increase the money back to 100%
 function calculateGrowThreads(hackPercentage, targetServer) {
+    checkNonNull(hackPercentage, targetServer);
+
     let remainingAmount = (100 - hackPercentage) * 0.01 * targetServer.maxMoney;
     const multiplier = 1 + (targetServer.growPercent / 100);
     let rounds = 0;
@@ -212,6 +242,8 @@ function calculateGrowThreads(hackPercentage, targetServer) {
 
 // The number of weaken threads to get back to 0 security after grows
 function calculateWeakenGrowThreads(growThreads) {
+    checkNonNull(growThreads);
+
     // We return one more than we need to, so that we reduce security a little bit faster
     // There's something wrong with grow that causes it to raise security more than it should
     return Math.ceil(1.4 * (growThreads * GROW_SECURITY_PER_THREAD) / WEAKEN_SECURITY_PER_THREAD);;
@@ -222,6 +254,8 @@ function calculateWeakenGrowThreads(growThreads) {
  * that percentage
  */
 function getScriptSizeTotal(ns, target, hackPercentage) {
+    checkNonNull(ns, target, hackPercentage);
+
     const hackThreads = calculateHackThreads(hackPercentage, target);
     const weakenHackThreads = calculateWeakenHackThreads(hackThreads);
     const growThreads = calculateGrowThreads(hackPercentage, target);
@@ -244,15 +278,22 @@ function getScriptSizeTotal(ns, target, hackPercentage) {
     return totalSize;
 }
 
+function calculateAvailableMemory(ns, attackServers) {
+    checkNonNull(ns, attackServers);
+
+    return attackServers
+            .map((server) => getHostname(server))
+            .map((hostname) => getMemoryUsable(ns, hostname))
+            .reduce((a,b) => a + b);
+}
+
 /*
  * Returns the maximum percentage of the target server's money that can be hacked by the specified attack servers
  */
 async function getHackPercentage(ns, target, attackServers) {
-    const availableMemory = attackServers
-        .map((server) => getHostname(server))
-        .map((hostname) => getMemoryUsable(ns, hostname))
-        .reduce((a,b) => a + b)
-        * 0.95;
+    checkNonNull(ns, target, attackServers);
+
+    const availableMemory = calculateAvailableMemory(ns, attackServers) * 0.95;
     ns.tprint("Total available memory: " + availableMemory);
 
 
@@ -278,6 +319,8 @@ async function getHackPercentage(ns, target, attackServers) {
  * maxValue = the upper bound value that will not work
  */
 async function getHackPercentageBounded(ns, target, attackServers, availableMemory, minPercentage, maxPercentage) {
+    checkNonNull(ns, target, attackServers, availableMemory, minPercentage, maxPercentage);
+
     //console.log("Checking hack percentage [" + getHostname(target) + "] (" + minPercentage + " - " + maxPercentage + ") with " + availableMemory.toLocaleString() + " memory");
     if ((maxPercentage - minPercentage) < 0.2) {
         // If the gap is small enough, don't bother
@@ -316,6 +359,8 @@ async function getHackPercentageBounded(ns, target, attackServers, availableMemo
 
 
 async function weakenToMin(ns, target, attackServersIn, round) {
+    checkNonNull(ns, target, attackServersIn, round);
+
     const weakenOnceSize = ns.getScriptRam(SCRIPT_HACK, "home");
     const hostname = getHostname(target);
     const minSecurity = ns.getServerMinSecurityLevel(hostname);
@@ -335,17 +380,68 @@ async function weakenToMin(ns, target, attackServersIn, round) {
     ns.tprint("Lowered security on [" + hostname + "] to minimum [" + ns.getServerSecurityLevel(hostname) + "]");
 }
 
+/**
+ * Watch for the security level on this host to get low, and signal ourselves when it does.
+ * We assume that we are able to afford to run one of these on the local server.
+ * If not, we are probably under-buying local ram.
+ */
+function watchSecurity(ns, targetHostname, minSecurityLevel) {
+    checkNonNull(ns, targetHostname, minSecurityLevel);
+
+    if (!ns.run(SCRIPT_WATCH_SECURITY, 1, targetHostname, minSecurityLevel)) {
+        ns.tprint("Unable to run [" + SCRIPT_WATCH_SECURITY + "] on [" + targetHostname + "]");
+    }
+}
+
+/**
+ * Given a list of servers, setup a script that will signal ourselves when our current
+ * is high enough to hack one of them AND we have root on it
+ */
+function watchHackable(ns, servers) {
+    checkNonNull(ns, servers);
+
+    const hostnames = servers.map((server) => getHostname(server));
+    if (!ns.run(SCRIPT_WATCH_HACKABLE, 1, JSON.stringify(hostnames))) {
+        ns.tprint("Unable to run [" + SCRIPT_WATCH_HACKABLE + "] on [" + hostnames + "]");
+    }
+}
+
 /*
  * Runs hack/weaken/grow/weaken targeting the specified server.
  * Runs as many instances as it can, up to a maximum of enough to drain 100% of the target's money each cycle
  *
  * Returns - the list of attack servers that were not depleted of ram
  */
-async function attack(ns, target, attackServersIn, round) {
-    let attackServers = copyList(attackServersIn);
+async function attack(ns, target, attackServersIn, round, totalUsableMemory) {
+    checkNonNull(ns, target, attackServersIn, round, totalUsableMemory);
 
-    if (target.hackPercent === 0) {
-        // We can't hack this one at all, skip it
+    let attackServers = copyList(attackServersIn);
+    const targetHostname = getHostname(target);
+
+
+    //if (target.hackPercent === 0) {
+    //    // We can't hack this one at all, skip it
+    //    return attackServers;
+    //}
+
+    // If the server's current security level is too high, aim a Weaken at it and move on
+    const minSecurityLevel = ns.getServerMinSecurityLevel(targetHostname);
+    const baseSecurityLevel = ns.getServerBaseSecurityLevel(targetHostname);
+    // TODO: Need better logic here. "3" was causing restarts too often, but 50% could be way off
+    const targetSecurityLevel = (minSecurityLevel + Math.min(baseSecurityLevel, 100)) / 2;
+    if (ns.getServerSecurityLevel(targetHostname) > targetSecurityLevel) {
+        // Spawn only weakens until security is near minimum.
+        let numberOfWeakens = Math.floor((ns.getServerSecurityLevel(targetHostname) - ns.getServerMinSecurityLevel(targetHostname)) / 0.05);
+        // We don't want to use up all our memory on weakens... don't use more than 5% of our total on any serverr
+        if ((numberOfWeakens * ns.getScriptRam(SCRIPT_WEAKEN, "home")) > (totalUsableMemory * 0.05)) {
+            numberOfWeakens = (totalUsableMemory * 0.05) / ns.getScriptRam(SCRIPT_WEAKEN, "home");
+        }
+        //attackServers = scheduleOn(ns, attackServers, SCRIPT_WEAKEN_ONCE, numberOfWeakens, targetHostname, null, TAG_WEAKENING + "/" + round);
+        //ns.tprint("Waiting on security: " + targetHostname + " <= " + minSecurityLevel + " (from " + ns.getServerSecurityLevel(targetHostname) + ")");
+        //watchSecurity(ns, targetHostname, minSecurityLevel);
+        attackServers = scheduleOn(ns, attackServers, SCRIPT_WEAKEN, numberOfWeakens, targetHostname, 0, TAG_WEAKENING + "/" + round);
+        ns.tprint("Waiting on security: " + targetHostname + " <= " + minSecurityLevel + " (from " + ns.getServerSecurityLevel(targetHostname) + ")");
+        watchSecurity(ns, targetHostname, minSecurityLevel);
         return attackServers;
     }
 
@@ -371,8 +467,6 @@ async function attack(ns, target, attackServersIn, round) {
     // How long we want each script to run for
     const duration = Math.max(target.hackTime, target.growTime, target.weakenTime) + (SCRIPT_DELAY * 4);
     ns.tprint("Duration: " + duration + " seconds");
-
-    const targetHostname = getHostname(target);
 
     ns.tprint("Attacking [" + targetHostname + "] with h/w/g/w = "
         + hackThreads + "/" + weakenHackThreads + "/" + growThreads + "/" + weakenGrowThreads
@@ -403,6 +497,8 @@ async function attack(ns, target, attackServersIn, round) {
  * Tag is an unused argument to differentiate different instances of the same script.
  */
 function scheduleOn(ns, attackServersIn, jobScript, numberToRun, targetHostname, sleepAmount, tag) {
+    checkNonNull(ns, attackServersIn, jobScript, numberToRun, targetHostname, sleepAmount, tag);
+
     let attackServers = copyList(attackServersIn);
 
     //ns.tprint("scheduleOn: [" + jobScript + "] targeting [" + targetHostname + "] on " + attackServers.length + " servers");
@@ -423,7 +519,9 @@ function scheduleOn(ns, attackServersIn, jobScript, numberToRun, targetHostname,
 
         numberToRun -= threadsOnThisHost;
         if (threadsOnThisHost > 0) {
-            let argList = [jobScript, attackerHostname, threadsOnThisHost, targetHostname, sleepAmount, tag];
+            let argList = (sleepAmount == null)
+                ? [jobScript, attackerHostname, threadsOnThisHost, targetHostname, tag]
+                : [jobScript, attackerHostname, threadsOnThisHost, targetHostname, sleepAmount, tag];
             //ns.tprint("execute: " + argList);
             if (execa(ns, argList)) {
                 // ran successfully
@@ -450,6 +548,8 @@ function scheduleOn(ns, attackServersIn, jobScript, numberToRun, targetHostname,
  * - kill off ALL running scripts on non-home attack servers
  */
 async function resetScripts(ns, server) {
+    checkNonNull(ns, server);
+
     ns.print("Resetting scripts on [" + getHostname(server) + "]");
     SCRIPTS_TO_COPY.forEach((scriptName) => {
         if (!ns.fileExists(scriptName, 'home')) {
@@ -461,21 +561,6 @@ async function resetScripts(ns, server) {
     while (SCRIPTS_TO_KILL.filter((script) => ns.scriptKill(script, hostname)).length > 0) {
         await ns.sleep(100);
     }
-    //while (SCRIPTS_TO_KILL.filter((script) => {
-    //    const val = ns.scriptKill(script, hostname);
-    //    if (val == true) {
-    //        ns.print("Killed script [" + script + "] on [" + hostname + "]: " + val);
-    //        ns.print("Is running? " + ns.scriptRunning(script, hostname));
-    //        ns.print("Processes: " + JSON.stringify(ns.ps(hostname)));
-    //        ns.ps(hostname)
-    //            .filter(process => ["weaken.ns", "hack.ns", "grow.ns"].includes(process.filename))
-    //            .forEach(process => ns.)
-    //    }
-    //    return val;
-    //}).length > 0) {
-    //    ns.print("Waiting on kill scripts on [" + hostname + "]: " + SCRIPTS_TO_KILL.join(", "));
-    //    await ns.sleep(100);
-    //}
 
     if (hostname !== "home") {
         do {
@@ -486,6 +571,86 @@ async function resetScripts(ns, server) {
     }
 }
 
+/**
+ * Kills all the watch scripts (that this script would have started) running on the home server
+ */
+function killWatchScripts(ns) {
+    checkNonNull(ns);
+
+    const processes = ns.ps('home');
+
+    processes
+        .filter((process) => process.filename === SCRIPT_WATCH_SECURITY || process.filename === SCRIPT_WATCH_HACKABLE)
+        .forEach((process) => {
+            //ns.tprint("Killing script: " + JSON.stringify(process));
+            ns.kill(process.pid);
+        });
+}
+
+function checkNonNull(...args) {
+    for (let i=0; i<args.length; i++) {
+        if (typeof args[i] === "undefined") {
+            console.trace("Field " + i + " was not provided");
+            throw "Field " + i + " was not provided";
+        }
+    }
+}
+
+async function schedule(ns, attackServersIn, targetServersIn) {
+    checkNonNull(ns, attackServersIn, targetServersIn);
+
+    let attackServers = copyList(attackServersIn);
+    let targetServers = copyList(targetServersIn);
+
+    killWatchScripts(ns);
+    await ns.sleep(10);
+    ns.print("Killed off existing watch scripts");
+
+    for (let i=0; i<attackServers.length; i++) {
+        await resetScripts(ns, attackServers[i]);
+    }
+    ns.print("Finished resetting scripts");
+
+    const sortedTargets = getTargettingInfo(ns, targetServers);
+    ns.tprint("Sorted Targets\n\t" + sortedTargets.slice(0,4).map((target) => JSON.stringify(target)).join("\n\t"));
+
+    const totalUsableMemory = calculateAvailableMemory(ns, attackServers);
+
+    let remainingAttackServers = copyList(attackServers);
+    let remainingTargetServes = copyList(sortedTargets);
+    let round = 0;
+
+    while (remainingAttackServers.length > 0 && remainingTargetServes.length > 0) {
+        const currentTarget = remainingTargetServes.shift();
+        remainingAttackServers = await attack(ns, currentTarget, remainingAttackServers, round, totalUsableMemory);
+        round += 1;
+        await ns.sleep(10); // Just in case, to keep things responsive
+    }
+
+    ns.tprint("There were " + remainingAttackServers.length + " remaining attack servers: "
+        + remainingAttackServers.map((server) => getHostname(server)).join(", "));
+    ns.tprint("There were " + remainingTargetServes.length + " remaining target servers: "
+        + remainingTargetServes.map((server) => getHostname(server)).join(", "));
+}
+
+function getAttackServers(ns) {
+    const servers = getServerList(ns);
+    const attackServers = servers
+        .filter((server) => ns.hasRootAccess(getHostname(server)))
+        //.filter((server) => !getHostname(server).startsWith("hacknet-"))
+        .filter((server) => ![ "darkweb" ].includes(getHostname(server)));
+    return attackServers;
+}
+
+function getTargetServers(ns) {
+    const servers = getServerList(ns);
+    const purchasedServers = ns.getPurchasedServers();
+    const targets = servers
+        .filter((server) => !purchasedServers.includes(getHostname(server)))
+        .filter((server) => !["darkweb", "home"].includes(getHostname(server)))
+        .filter((server) => !getHostname(server).startsWith("hacknet-"));
+    return targets;
+}
 
 export async function main(ns) {
     ns.disableLog("getServerUsedRam");
@@ -495,111 +660,15 @@ export async function main(ns) {
         ns.tprint("Size: [" + scriptName + "]: " + ns.getScriptRam(scriptName));
     });
 
-    const servers = getServerList(ns);
-
     // Generate the list of servers we want to target with hacks
-    const purchasedServers = ns.getPurchasedServers();
-    const targets = servers
-        .filter((server) => !purchasedServers.includes(getHostname(server)))
-        .filter((server) => !["darkweb", "home"].includes(getHostname(server)))
-        .filter((server) => !getHostname(server).startsWith("hacknet-"));
 
-    const sortedTargets = getTargettingInfo(ns, targets);
-    ns.tprint("Sorted Targets\n\t" + sortedTargets.slice(0,4).map((target) => JSON.stringify(target)).join("\n\t"));
 
-    // And generate a list of servers that can be used to attack
-    let attackServers = servers
-        .filter((server) => ns.hasRootAccess(getHostname(server)))
-        //.filter((server) => !getHostname(server).startsWith("hacknet-"))
-        .filter((server) => ![ "darkweb" ].includes(getHostname(server)));
+    while (true) {
+        const attackServers = getAttackServers(ns);
+        const targetServers = getTargetServers(ns);
+        await schedule(ns, attackServers, targetServers);
 
-    for (let i=0; i<attackServers.length; i++) {
-        await resetScripts(ns, attackServers[i]);
+        await awaitSignal(ns);
+        ns.tprint("notified! restarting everything");
     }
-    ns.print("Finished resetting scripts");
-
-    let remainingAttackServers = copyList(attackServers);
-    let remainingTargetServes = copyList(targets);
-    let round = 0;
-
-    while (remainingAttackServers.length > 0 && remainingTargetServes.length > 0) {
-        const currentTarget = remainingTargetServes.shift();
-        remainingAttackServers = await attack(ns, currentTarget, remainingAttackServers, round);
-        round += 1;
-        await ns.sleep(10); // Just in case, to keep things responsive
-    }
-
-    ns.tprint("There were " + remainingAttackServers.length + " remaining attack servers: "
-        + remainingAttackServers.map((server) => getHostname(server)).join(", "));
-    ns.tprint("There were " + remainingTargetServes.length + " remaining target servers: "
-        + remainingTargetServes.map((server) => getHostname(server)).join(", "));
-
 }
-
-
-
-
-
-
-/*
- This is only notes so far
-
-
- return ((target.moneyMax * hackingChance * hackingPercent) / hackingTime); is what I do for getting money per second per thread
-
- Do other people have all their servers attack a single target? Or do they split them up across all targets (like mine) or do they split it up some other way?
-
- Determine best target
-
- Determine how many hack threads are needed to get the target from 100% money to 0% money
- hackAnalyzeThreads
-
- Determine how many weaken threads will get back down to min security from there
- because hack raises security
-
- Determine how many grow threads will bring the server back up to 100% money
-
- Determine how many weaken threads will being the server back down to min security
- because grow raises security
-
- Kick off threads so they will finish in the order of: hack, weaken-1, grow, weaken-2, repeat
-
-
- hack = +0.002 security / thread
- grow = +0.004 security / thread
- weaken = -0.05 security / thread
-
-
- hack = 0.1 gb
- grow = 0.15 gb
- weaken = 0.15 gb
-
- And then the last thing I think I need for a "basic" approach is ... when determining the best server to attack,
- I've seen a formula like ((target.moneyMax * hackingChance * hackingPercent) / hackingTime) seems more or less
- appropriate. However, it sounds like you want to determine that at min security for the server.
- Does that mean you need to reduce every server to min security before you can really figure out which is best?
-
- ^ No, the formulas API can help with this
- https://bitburner.readthedocs.io/en/latest/netscript/netscriptformulasapi.html?highlight=formulas
-
-
- let server = getServer(hostname);
- server.currentSecurityValue = server.minimumSecurityValue;
- let player = getPlayer();
- let hackingChance = hackChance(server, player);
-
- example of something similar
- https://bitburner.readthedocs.io/en/latest/netscript/formulasapi/basic/hackTime.html
-
-
- loop strats is when each individual process just does while(1) grow (or hack or weaken) without anything else.
-
- Berfert the advantage of loop strats is it's much more efficient with ram usage.
-
-
- Once per minute, check to see what the top servers to attack are.
- If the order of the servers we're actually attacking has changed, re-distribute processes
-
- NOTE: ns.formulas.basic.hackPercent(server,player) is returning a fraction (0-1) not a percentage (0-100)
- Lets assume that grow is doig the same
- */
