@@ -6,7 +6,7 @@ export async function main(ns) {
     const targetHostname = ns.args[0];
     const duration = ns.args[1]; // in seconds
 
-    if (!targetHostname || !duration) {
+    if (!targetHostname || (typeof duration === "undefined")) {
         ns.tprint("Usage: weaken.ns [target] [duration]");
         return;
     }

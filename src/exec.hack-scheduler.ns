@@ -602,15 +602,6 @@ async function schedule(ns, attackServersIn, targetServersIn) {
     let attackServers = copyList(attackServersIn);
     let targetServers = copyList(targetServersIn);
 
-    killWatchScripts(ns);
-    await ns.sleep(10);
-    ns.print("Killed off existing watch scripts");
-
-    for (let i=0; i<attackServers.length; i++) {
-        await resetScripts(ns, attackServers[i]);
-    }
-    ns.print("Finished resetting scripts");
-
     const sortedTargets = getTargettingInfo(ns, targetServers);
     ns.tprint("Sorted Targets\n\t" + sortedTargets.slice(0,4).map((target) => JSON.stringify(target)).join("\n\t"));
 
@@ -633,6 +624,64 @@ async function schedule(ns, attackServersIn, targetServersIn) {
         + remainingTargetServes.map((server) => getHostname(server)).join(", "));
 }
 
+/*
+ * Use up to 10% of total available memory weakening servers that are currently too difficult for us to hack
+ *
+ * Returns the list of targets that did not need to be weakened
+ */
+function weakenServers(ns, attackServersIn, targetServersIn) {
+    checkNonNull(ns, attackServersIn, targetServersIn);
+
+    let attackServers = copyList(attackServersIn);
+
+    const totalAvailableMemory = calculateAvailableMemory(ns, attackServers)
+    let usableMemory = totalAvailableMemory * 0.1;
+
+    // Find all the target serves that we want to weaken
+    const targetsToWeaken = targetServersIn
+        .filter(targetServer => {
+            const targetHostname = getHostname(targetServer);
+            const minSecurityLevel = ns.getServerMinSecurityLevel(targetHostname);
+            const baseSecurityLevel = ns.getServerBaseSecurityLevel(targetHostname);
+            // We want to aim for a security level of lower than the highest of
+            // - the average of the min and base security level, OR
+            // - the min security level + 5
+            const targetSecurityLevel = Math.max(
+                (minSecurityLevel + Math.min(baseSecurityLevel, 100)) / 2,
+                (minSecurityLevel + 5));
+            return ns.getServerSecurityLevel(targetHostname) > targetSecurityLevel;
+        });
+    const weakTargets = targetServersIn.filter(server => !targetsToWeaken.includes(server));
+
+    const scriptSize = ns.getScriptRam(SCRIPT_WEAKEN, "home");
+    let round = 0;
+    while (usableMemory > scriptSize && targetsToWeaken.length > 0) {
+        const targetServer = targetsToWeaken.shift();
+        const targetHostname = getHostname(targetServer);
+        const currentSecurityLevle = ns.getServerSecurityLevel(targetHostname);
+        const minSecurityLevel = ns.getServerMinSecurityLevel(targetHostname);
+
+        // Spawn only weakens until security is near minimum.
+        let numberOfWeakens = Math.floor((currentSecurityLevle - minSecurityLevel) / 0.05);
+        // We don't want to use up all our memory on weakens... don't use more than 5% of our total on any serverr
+        if ((numberOfWeakens * scriptSize) > usableMemory) {
+            numberOfWeakens = scriptSize / ns.getScriptRam(SCRIPT_WEAKEN, "home");
+        }
+        ns.print("Weakening " + targetHostname);
+        attackServers = scheduleOn(ns, attackServers, SCRIPT_WEAKEN, numberOfWeakens, targetHostname, 0, TAG_WEAKENING + "/" + round);
+        ns.tprint("Waiting on security: " + targetHostname + " <= " + minSecurityLevel + " (from " + ns.getServerSecurityLevel(targetHostname) + ")");
+        watchSecurity(ns, targetHostname, minSecurityLevel);
+
+        usableMemory -= (numberOfWeakens * scriptSize);
+        round += 1;
+    }
+
+    return weakTargets;
+}
+
+/*
+ * Returns a list of the servers that attack programs (hack, weaken, grow) can be run from
+ */
 function getAttackServers(ns) {
     const servers = getServerList(ns);
     const attackServers = servers
@@ -642,12 +691,16 @@ function getAttackServers(ns) {
     return attackServers;
 }
 
+/*
+ * Returns a list of servers that are valid targets for hacking
+ */
 function getTargetServers(ns) {
     const servers = getServerList(ns);
     const purchasedServers = ns.getPurchasedServers();
     const targets = servers
         .filter((server) => !purchasedServers.includes(getHostname(server)))
         .filter((server) => !["darkweb", "home"].includes(getHostname(server)))
+        .filter((server) => ns.hasRootAccess(getHostname(server)))
         .filter((server) => !getHostname(server).startsWith("hacknet-"));
     return targets;
 }
@@ -660,13 +713,21 @@ export async function main(ns) {
         ns.tprint("Size: [" + scriptName + "]: " + ns.getScriptRam(scriptName));
     });
 
-    // Generate the list of servers we want to target with hacks
-
-
     while (true) {
         const attackServers = getAttackServers(ns);
         const targetServers = getTargetServers(ns);
-        await schedule(ns, attackServers, targetServers);
+
+        killWatchScripts(ns);
+        await ns.sleep(10);
+        ns.print("Killed off existing watch scripts");
+
+        for (let i=0; i<attackServers.length; i++) {
+            await resetScripts(ns, attackServers[i]);
+        }
+        ns.print("Finished resetting scripts");
+
+        const weakTargetServers = weakenServers(ns, attackServers, targetServers);
+        await schedule(ns, attackServers, weakTargetServers);
 
         await awaitSignal(ns);
         ns.tprint("notified! restarting everything");
