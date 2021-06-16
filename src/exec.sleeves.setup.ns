@@ -1,0 +1,36 @@
+/*
+ * Executeable: exec.sleeves.setup.ns
+ *
+ * Sets up sleeves with appropriate action
+ */
+
+const CRIME_MUG = "Mug";
+const CRIME_HOMICIDE = "Homicide";
+
+function setupSleeve(ns, sleeveNumber) {
+    const sleeveInfo = ns.sleeve.getInformation(sleeveNumber);
+    const sleeveStats = ns.sleeve.getSleeveStats(sleeveNumber);
+
+    if (sleeveStats.shock > 0 || sleeveStats.sync < 100) {
+        ns.sleeve.setToCommitCrime(sleeveNumber, CRIME_MUG);
+        return;
+    }
+
+    const combatStatsSum = sleeveStats.strength + sleeveStats.defense + sleeveStats.dexterity + sleeveStats.agility;
+    if (combatStatsSum < 120) {
+        ns.sleeve.setToCommitCrime(sleeveNumber, CRIME_MUG);
+        return;
+    }
+
+    ns.sleeve.setToCommitCrime(sleeveNumber, CRIME_HOMICIDE);
+}
+
+export async function main(ns) {
+    const numSleeves = ns.sleeve.getNumSleeves();
+
+    for (let i = 0; i < numSleeves; i++) {
+        setupSleeve(ns, i);
+    }
+
+    ns.tprint("Sleeve setup complete");
+}

@@ -1,0 +1,69 @@
+/*
+ * Executeable: exec.startup.ns
+ *
+ * Runs all the standard scripts, if they're not already running
+ * Buys TOR
+ * Buys scripts
+ *
+ * Must be run from home
+ */
+
+function isRunning(ns, scriptName) {
+    const processes = ns.ps('home');
+    return processes.some((process) => process.filename === scriptName)
+}
+
+function canRun(ns, scriptName) {
+    const scriptSize = ns.getScriptRam(scriptName, "home");
+    const ramMax = ns.getServerMaxRam("home");
+    const ramUsed = ns.getServerUsedRam("home");
+    const ramAvailable = ramMax - ramUsed;
+
+    return (ramAvailable > scriptSize);
+}
+
+function run(ns, scriptName) {
+    if (isRunning(ns, scriptName)) {
+        ns.print("Script / already running: " + scriptName);
+        return;
+    }
+
+    if (!canRun(ns, scriptName)) {
+        ns.print("Script / cannot run: " + scriptName);
+        return;
+    }
+
+    if ( ns.exec(scriptName, "home", 1) === 0) {
+        ns.tprint("Script / failed to run: " + scriptName);
+        return;
+    }
+
+    ns.print("Script / ran: " + scriptName);
+}
+
+export async function main(ns) {
+    ns.tail();
+
+    // Run and Done scripts (don't stay running) should be fired of first
+    run(ns, "exec.sleeves.setup.ns");
+
+    // Then scripts that stay running
+    run(ns, "exec.acquire-root-access.ns");
+    run(ns, "exec.autocontract.ns");
+    run(ns, "exec.spend-hashes.ns");
+
+    run(ns, "exec.hack-schedule.ns");
+
+    // These... we're not going to run for now
+    //exec.purchase-server-8gb.ns
+    //exec.purchase-servers.ns
+
+    // TODO
+    // buy tor and scripts as necessary / available
+
+    //BruteSSH.exe - $500.000k - Opens up SSH Ports
+    //FTPCrack.exe - $1.500m - Opens up FTP Ports
+    //relaySMTP.exe - $5.000m - Opens up SMTP Ports
+    //HTTPWorm.exe - $30.000m - Opens up HTTP Ports
+    //SQLInject.exe - 250,000
+}

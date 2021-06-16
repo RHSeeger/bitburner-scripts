@@ -419,32 +419,10 @@ async function attack(ns, target, attackServersIn, round, totalUsableMemory) {
     const targetHostname = getHostname(target);
 
 
-    //if (target.hackPercent === 0) {
-    //    // We can't hack this one at all, skip it
-    //    return attackServers;
-    //}
-
-    // If the server's current security level is too high, aim a Weaken at it and move on
-    const minSecurityLevel = ns.getServerMinSecurityLevel(targetHostname);
-    const baseSecurityLevel = ns.getServerBaseSecurityLevel(targetHostname);
-    // TODO: Need better logic here. "3" was causing restarts too often, but 50% could be way off
-    const targetSecurityLevel = (minSecurityLevel + Math.min(baseSecurityLevel, 100)) / 2;
-    if (ns.getServerSecurityLevel(targetHostname) > targetSecurityLevel) {
-        // Spawn only weakens until security is near minimum.
-        let numberOfWeakens = Math.floor((ns.getServerSecurityLevel(targetHostname) - ns.getServerMinSecurityLevel(targetHostname)) / 0.05);
-        // We don't want to use up all our memory on weakens... don't use more than 5% of our total on any serverr
-        if ((numberOfWeakens * ns.getScriptRam(SCRIPT_WEAKEN, "home")) > (totalUsableMemory * 0.05)) {
-            numberOfWeakens = (totalUsableMemory * 0.05) / ns.getScriptRam(SCRIPT_WEAKEN, "home");
-        }
-        //attackServers = scheduleOn(ns, attackServers, SCRIPT_WEAKEN_ONCE, numberOfWeakens, targetHostname, null, TAG_WEAKENING + "/" + round);
-        //ns.tprint("Waiting on security: " + targetHostname + " <= " + minSecurityLevel + " (from " + ns.getServerSecurityLevel(targetHostname) + ")");
-        //watchSecurity(ns, targetHostname, minSecurityLevel);
-        attackServers = scheduleOn(ns, attackServers, SCRIPT_WEAKEN, numberOfWeakens, targetHostname, 0, TAG_WEAKENING + "/" + round);
-        ns.tprint("Waiting on security: " + targetHostname + " <= " + minSecurityLevel + " (from " + ns.getServerSecurityLevel(targetHostname) + ")");
-        watchSecurity(ns, targetHostname, minSecurityLevel);
+    if (target.hackPercent === 0) {
+        // We can't hack this one at all, skip it
         return attackServers;
     }
-
 
     const hackPercentage = await getHackPercentage(ns, target, attackServers);
     ns.tprint("Found hack percentage: " + hackPercentage);
