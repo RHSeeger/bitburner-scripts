@@ -1,0 +1,8 @@
+// FROM : https://github.com/wjhall/bitburner/blob/master/stocks.js
+
+myStocks=["ECP", "BLD", "OMTK",
+    "FSIG","FLCM","CTYS"]
+
+for(i=0;i<myStocks.length;i++){
+    exec("wjhall.sma.script","home",1,myStocks[i])
+}
