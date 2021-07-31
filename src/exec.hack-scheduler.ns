@@ -614,20 +614,35 @@ function weakenServers(ns, attackServersIn, targetServersIn) {
 
     const totalAvailableMemory = calculateAvailableMemory(ns, attackServers)
     let usableMemory = totalAvailableMemory * 0.1;
+    const player = ns.getPlayer();
 
     // Find all the target serves that we want to weaken
     const targetsToWeaken = targetServersIn
         .filter(targetServer => {
             const targetHostname = getHostname(targetServer);
+
+            // If we have > 75% chance to hack it, don't bother trying to weaken it
+            const hackPercentage = 100 * ns.formulas.basic.hackPercent(ns.getServer(targetHostname), player);
+            if (hackPercentage > 75) {
+                return false;
+            }
+
+            // Otherwise, base it on how high its security level is (compared to it's min/base/etc)
             const minSecurityLevel = ns.getServerMinSecurityLevel(targetHostname);
             const baseSecurityLevel = ns.getServerBaseSecurityLevel(targetHostname);
+            const currentSecurityLevel =  ns.getServerSecurityLevel(targetHostname);
+
+            ns.tprint("Hack % [" + targetHostname + "] = " + ns.nFormat(hackPercentage, "0,0.000")
+                + " - security = [min=" + minSecurityLevel + "] [base="  + baseSecurityLevel + "] "
+                    + "[curr=" + ns.nFormat(currentSecurityLevel, "0,0.00") + "]");
+
             // We want to aim for a security level of lower than the highest of
             // - the average of the min and base security level, OR
             // - the min security level + 5
             const targetSecurityLevel = Math.max(
                 (minSecurityLevel + Math.min(baseSecurityLevel, 100)) / 2,
                 (minSecurityLevel + 5));
-            return ns.getServerSecurityLevel(targetHostname) > targetSecurityLevel;
+            return currentSecurityLevel > targetSecurityLevel;
         });
     const weakTargets = targetServersIn.filter(server => !targetsToWeaken.includes(server));
 
